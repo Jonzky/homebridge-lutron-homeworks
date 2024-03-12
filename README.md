@@ -1,9 +1,12 @@
-<p align="left"> <img src="https://badgen.net/badge/homebridge/verified/purple"> </p>
-<p align="center">
-<img src="https://github.com/homebridge/branding/raw/master/logos/homebridge-wordmark-logo-vertical.png" width="150">
-</p>
+# Homebridge Lutron Homeworks Plugin (Minor edits)
 
-# Homebridge Lutron Homeworks Plugin
+## Edited Intro
+This is a very minorly edited plugin that is based on kikolobo's work - I just noticed for my lutron homeworks the commands were slightly different, so some minor tweaking was needed. I'm assuming I'm on an earlier version as its 10+ years old now.
+
+Originally I struggled to access the proccessor info (XML file) - but in my case I was also to login with the credentials (username,password): LutronGUI,jetski.
+
+The server allowed anonymous FTP and I was able to access 'fullxml.dat' - which is actually a zip, so you can just unzip it and then you have access to the XML file.
+
 
 ## Welcome:
 This is a HomeBridge plugin to integrate Lutron Homeworks lighting systems to Homekit. This will help control your lights of your lutron system with Apple Homekit.

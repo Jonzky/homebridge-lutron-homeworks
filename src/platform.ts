@@ -4,7 +4,6 @@ import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { HomeworksAccessory } from './homeworksAccessory';
 import { NetworkEngine } from './network';
 
-
 export class HomeworksPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service = this.api.hap.Service;
   public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;  
@@ -59,7 +58,6 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
     const rxCallback = (engine: NetworkEngine, message:string) : void => {   //ON SOCKET TRAFFIC CALLBACK
       const messagesArray = message.split('\n');
 
-
       for (let singleMessage of messagesArray) {
         singleMessage = singleMessage.trim();
 
@@ -67,25 +65,28 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
           continue; 
         }
        
-        if (singleMessage.includes('~SYSTEM,6,')) { //This is considered a PONG reply.
+        if (singleMessage.includes('P001')) { //This is considered a PONG reply.
           this.log.debug('[platform][Pong] Received'); //TODO: Move to NETWORK Class (why waste cycles here)
           continue;
         }
 
         if (!singleMessage.includes('GLINK_DEVICE_SERIAL_NUM') &&
             !singleMessage.includes('Device serial ')) {
-          this.log.debug('[platform][traffic]', singleMessage);
+          this.log.info('[platform][traffic]', singleMessage);
         }
-      
+
         const splittedMessage = singleMessage.split(',');  //Parse Message by splitting comas
-        if (splittedMessage && (splittedMessage[2] === '1')) {   //Update Message from processor. (1 means update)
-          const deviceId = splittedMessage[1];  //Assign values from splitted message
-          const brigthness = Number(splittedMessage[splittedMessage.length-1]);
+        if (splittedMessage && (splittedMessage[0] === 'DL')) {   //Update Message from processor. (1 means update)
+          this.log.info('DL message: ' + singleMessage);
+          const deviceId = splittedMessage[1].trim().slice(1, -1);  //Assign values from splitted message
+          const brigthness = Number(splittedMessage[2].trim());
           const uuid = this.api.hap.uuid.generate(deviceId);
+          this.log.info('deviceId: ' + deviceId);
           const targetDevice = this.homeworksAccessories.find(accessory => accessory.getUUID() === uuid);
-        
+          this.log.info('targetDevice: ' + targetDevice);
+
           if (targetDevice) { //If we find a device, it means we are observing it and need the value.
-            this.log.debug('[Platform][EngineCallback] Set: %s to: %i', targetDevice.getName(), brigthness);
+            this.log.info('[Platform][EngineCallback] Set: %s to: %i', targetDevice.getName(), brigthness);
             targetDevice.updateBrightness(brigthness); 
           }
         }
@@ -98,10 +99,16 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
       //When we connect. We want to get the latest state for the lights. So we issue a query
       //  NOTE: If the device is being updated elsewhere (like another app or switch) this
       //  value may be incorrect
+      let i = 1;
       for (const accessory of this.homeworksAccessories) {
+        const waitTime = i * 1000;
         this.log.debug('[Platform] Requesting level for:', accessory.getName());
-        const command = `?OUTPUT,${accessory.getIntegrationId()},1`;
-        engine.send(command);        
+        setTimeout(() => {
+          this.log.debug('Waited ' + waitTime + 's before sending - ' + accessory.getName());
+          const command = `RDL, ${accessory.getIntegrationId()}`;
+          engine.send(command);
+        }, waitTime);
+        i++;
       }
     };
 
@@ -126,10 +133,8 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
     //TODO: Move elsewhere. 
     //This will be called when a request from HK comes to change a value in the processor
     const brightnessChangeCallback = (value: number, isDimmable: boolean, accessory:HomeworksAccessory) : void => { //Callback from HK
-      const fadeTime = isDimmable ? '00:01' : '00:00';
       
-      const command = `#OUTPUT,${accessory.getIntegrationId()},1,${value},${fadeTime}`;
-
+      const command = `FADEDIM, ${value}, 0, 0, ${accessory.getIntegrationId()}`;
       accessory.updateBrightness(value); //Shall we update it locally?
 
       this.log.debug('[Platform][setLutronCallback] %s to %s (%s)', accessory.getName(), value, command);

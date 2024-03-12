@@ -61,7 +61,7 @@ export class NetworkEngine {
     if (this.status !== ComState.Ready) {
       this.log.error('[Network] Socket not ready.  Will attempt sending.');        
     }
-
+    this.log.info('Sent: ' + message);
     this.socket.write(message + this.crlf);      
   }
 
@@ -88,37 +88,14 @@ export class NetworkEngine {
       this.watchdogExpiredFlag = false;
       this.padTheDog();                      
       
-      if (stringData.includes('login:')) {
+      if (stringData.includes('LOGIN:')) {
         this.status = ComState.Authenticating;
         this.log.debug('[Network] Authenticating Step 1...');
         this.socket.write(this.username + this.crlf);
         return;
       }
 
-      if (stringData.includes('password:')) {
-        this.status = ComState.Authenticating;
-        this.log.debug('[Network] Authenticating Step 2...');
-        this.socket.write(this.password + this.crlf);
-        return;
-      }
-         
-      if (stringData.includes('T>')) { // Prompt (QNET>)
-        if (this.status === ComState.Authenticating) {
-          this.status = ComState.Establishing;
-          // this.log.debug('[Network] Got Prompt');
-          this.log.debug('[Network] Requesting Monitoring Query');
-          this.socket.write('#MONITORING,5,1' + this.crlf); // Send Monitoring Query             
-          setTimeout(() => {   //For some reason, processor sometimes fails to answer on time.      
-            if (this.status === ComState.Establishing) {
-              this.log.warn('[Network] Requesting Monitoring Query [Second Attempt]');
-              this.socket.write('#MONITORING,5,1' + this.crlf); // Send Monitoring Query 
-            }
-          }, 2500); //So let's retry in 2.5 seconds later if we did not rx aknowledgement.
-        } 
-        return;
-      }
-
-      if (stringData.includes('~MONITORING,5,1')) {  //Processor aknowledges monitoring command.
+      if (stringData.includes('Dimmer level monitoring')) {  //Processor aknowledges monitoring command.
         if (this.status === ComState.Establishing) { //Lets mark connection stable.
           this.status = ComState.Ready;
           this.log.info('[Network] Connected & Monitoring Query Acknowledged');
@@ -129,6 +106,14 @@ export class NetworkEngine {
         return;
       }
 
+      if (stringData.includes('LNET>')) { // Prompt (QNET>)
+        if (this.status === ComState.Authenticating) {
+          this.status = ComState.Establishing;
+          this.log.debug('[Network] Requesting Monitoring Query');
+          this.socket.write('DLMON' + this.crlf); // Send Monitoring Query             
+        } 
+        return;
+      }
       this.fireDidReceiveCallbacks(stringData);             
         
     });
@@ -155,11 +140,11 @@ export class NetworkEngine {
     setTimeout(() => {        
       if (this.status === ComState.Ready && this.watchdogExpiredFlag === true) { // No traffic in period? let's ping the system.
         this.watchdogExpiredFlag = false;          
-        this.socket.write('?SYSTEM,6' + this.crlf); // Sonset query appears to be lightweight.
+        this.socket.write('PINFO' + this.crlf); // Sonset query appears to be lightweight.
         this.log.debug('[Network][Ping] Sent...');
       } 
       this.startPingWatchdog(); //Reschedule watchdog even if we haven't expired.
-    }, 20000); //N = 20 Seconds
+    }, 40000); //N = 40 Seconds
   }
 
   //####
@@ -168,7 +153,7 @@ export class NetworkEngine {
     clearTimeout(this.pingWatchdogRef); //Clear the previous timer (Watchdog)
     this.pingWatchdogRef = setTimeout(() => { //Make a new one for N seconds.
       this.watchdogExpiredFlag = true; 
-    }, 30000); //N = 30 seconds.
+    }, 40000); //N = 30 seconds.
   }
 
   // Callback Helpers <<<<<<<<<<<<<<<<<<<<<<<<<<<<

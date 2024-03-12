@@ -88,14 +88,14 @@ function noteError(txt) {
 //  note that XML->JSON conversion is pretty wacko.
 //
 //  The parsed XML is an object with field:
-//      Project         object
+//      HWProject         object
 //
 //  The Project object has (among others) field:
 //      Areas.Area      Area or Area[]
 //
 //  The Area object has (among others) fields:
 //      _Name           string
-//      Outputs         Output or Output[]
+//      Rooms         Array of Room[]
 //      Areas           Area or Area[]
 //
 //  The Output object has (among others) fields:
@@ -104,44 +104,60 @@ function noteError(txt) {
 //      _OutputType     string
 //
 function walkDBJson(node) {
-    if (node.Project === undefined) {
-        noteError("Unable to parse: missing 'Project' field");
+    if (node.HWProject === undefined) {
+        console.log(node);
+        noteError("Unable to parse: missing 'HWProject' field");
         return [];
     }
 
-    return walkAreas(node.Project.Areas.Area);
+    return walkArea(node.HWProject.Area);
 }
 
-function walkAreas(areas) {
+function walkArea(areas) {
     //  Areas is either a single area or an array
     if (areas instanceof Array) {
         var deviceList = [];
-        for(var area of areas) {
-            deviceList = deviceList.concat(walkArea(area));
+        for(var rooms of areas) {
+            console.log(rooms);
+            deviceList = deviceList.concat(walkRooms(rooms.Room));
         }
         return deviceList;
+    } else {
+        console.log("NOPE");
     }
-
-    return walkArea( areas);
+    return null;
 }
 
-function walkArea(area) {
-    var deviceList = [];
-    if (area.Outputs !== '') {
-        var x = walkOutputs(area.Outputs.Output, area._Name);
-        deviceList = deviceList.concat(x);
+function walkRooms(rooms) {
+    if (rooms instanceof Array) {
+        var deviceList = [];
+        for(var room of rooms) {
+            deviceList = deviceList.concat(walkRoom(room));
+        }
+        return deviceList;
+    }else {
+        console.log("NOPER");
     }
-    if (area.Areas !== '') {
-        var x = walkAreas(area.Areas.Area);
+    return null;
+}
+
+function walkRoom(room) {
+    var deviceList = [];
+    console.log(room);
+    if (room.Outputs !== '') {
+        var x = walkOutputs(room.Outputs.Output, room.Name);
+        console.log(room.Name);
         deviceList = deviceList.concat(x);
     }
     return deviceList;
+
 }
 
 function walkOutputs(outputs, name) {
     if (outputs instanceof Array) {
         var deviceList = [];
         for (output of outputs) {
+            console.log(output);
             deviceList.push( walkOutput( output, name));
         }
         return deviceList;
@@ -151,14 +167,32 @@ function walkOutputs(outputs, name) {
 }
 
 function walkOutput(output, name) {
-    var deviceName = output._Name;
+    var deviceName = output.Name;
     if (document.getElementById("includeAreaName").checked) {
-        deviceName = name + " " + output._Name;
+        deviceName = name + " " + output.Name;
     }
+    var fixtureType = "light";
+    if (output.FixtureType == "Wired QED") {
+        fixtureType = "shade";
+    }
+
+    var splitDeviceId = output.Address.split(":");
+    var reconstructedId = '';
+
+    for (segment of splitDeviceId) {
+        console.log(segment);
+        if (segment.length == 1) {
+            reconstructedId += `0${segment}:`;
+        } else {
+            reconstructedId += `${segment}:`;
+        }
+    }
+    const completeId = reconstructedId.slice(0,-1);
+
     var device = { "name": deviceName,
-                    "integrationID": output._IntegrationID,
-                    "outputType": output._OutputType,
-                    "isDimmable": true};
+                    "integrationID": completeId,
+                    "Type": fixtureType,
+                    "isDimmable": output.Type == "DIMMER"};
                     
     return device;
 }

@@ -1,0 +1,127 @@
+LNET> help
+FADEDIM : Fade a Dimmer (RPM or Vareo)
+RAISEDIM : Raise a Dimmer (RPM or Vareo)
+LOWERDIM : Lower a Dimmer (RPM or Vareo)
+STOPDIM : Stop a Dimmer (RPM or Vareo)
+FLASHDIM : Flash a Dimmer (RPM or Vareo)
+STOPFLASH : Stop a Dimmer Flashing (RPM or Vareo)
+KBP : Keypad button press
+KBR : Keypad button release
+KBDT : Keypad button double tap
+KBH : Keypad button hold
+DBP : Dimmer button press
+DBR : Dimmer button release
+DBDT : Dimmer button double tap
+DBH : Dimmer button hold
+KBSS : Keypad button Scene Saver
+KBSR : Keypad button Scene Restore
+ST : Set system time
+SD : Set system date
+SDS : Set Daylight Savings
+TCE : Enable timeclock
+TCD : Disable timeclock
+TCS : Request timeclock state
+CHKBATT : Check the external battery connection
+RST : Request system time
+RST2 : Request system time with seconds
+RSD : Request system date
+RDS : Request Daylight Savings info
+KE : Keypad enable
+KD : Keypad disable
+VMR : Vacation mode record
+VMP : Vacation mode playback
+VMD : Vacation mode disable
+VMS : Request vacation mode state
+VRS : Check the completeness of vacation mode records
+GSS : Grafik Eye Scene Select
+GRXFLASH : Flash the zones on a grx main unit
+STARTLNKS : Start Links
+STOPLNKS : Stop Links
+SETLED : Set a keypad led state
+SETLEDS : Set a whole keypad's led states
+KBMON : Enable keypad button monitoring
+KBMOFF : Disable keypad button monitoring
+DLMON : Enable dimmer level monitoring
+DLMOFF : Disable dimmer level monitoring
+DRMON : Enable driver monitoring
+DRMOFF : Disable driver level monitoring
+GSMON : Enable GrafikEye scene monitoring
+GSMOFF : Disable GrafikEye scene monitoring
+KLMON : Enable keypad led monitoring
+KLMOFF : Disable keypad led monitoring
+OSREV : Request the O/S revisions
+BOOTREV : Request the boot revisions
+LNKSHRT : Request the link short status
+PROCADDR : Print processor address
+SUNRISE : Request today's sunrise time
+SUNSET : Request today's sunset time
+PROMPTON : Turn on prompt
+PROMPTOFF : Turn off prompt
+RDL : Request an zone level
+RKLS : Request a keypads led states
+RGS : Request an GRX scene
+RKES : Request a keypads state
+RKLBP : Request the last button pressed on a keypad
+SETBAUD : Set the RS232 port baud rate
+GETBAUD : Get the RS232 port baud rate
+SMB : Security mode begin
+SMT : Security mode terminate
+SMS : Security mode state
+CCOPULSE : Pulse a CCO relay
+CCOCLOSE : Close a CCO relay
+CCOOPEN : Open a CCO relay
+LOGIN : Login to the processor
+LOGOUT : Logout the connected processor or all processors
+SETHAND : Set port handshaking type
+GETHAND : Get port handshaking type
+RESET232 : Reset the 232 port to defined parameters
+STOPSEQ : Stop All Sequences Running and run terminate
+KILLSEQ : Kill All Sequences Running
+TEMON : Enable Timed Event monitoring
+TEMOFF : Disable Timed Event monitoring
+SSB : Begin Scene Saving Mode
+SST : Terminate Scene Saving Mode
+SSS : Check the Scene Saving State
+SVSS : Sivoia Select Scene
+RSVS : Request the Sivoia Scene
+HELP : Displays this help screen
+GDQA : Get Device QED Address
+DMS : Database download state
+SENDDB : Sends a DB to device
+SYNCDB : Sends DBs to all devices on a processor
+RETRYDB : Sends DBs to devices with errors on a processor
+RFDBSTAT : Prints which devices has an invalid DB
+DEVINFO : Get device information
+GTI : Get translator subnet address and frequency
+REBOOT : Forces a processor reset
+WIGGLEON : Wiggles a QED shade
+WIGGLEOFF : Stops a QED shade from wiggling
+QEDADDR : Enter QED Addressing mode
+GQR : Get QED Revisions
+QEDMOOB : QED Massive Out-Of-Box
+QEDGTT : QED Get Translation Table
+QEDPTT : QED Print Translation Table
+QEDCOMTEST : Test communication for a QED
+CLRCOMTEST : Clear comm test for a QED
+RFTEST : Test rf integrity
+PING : Ping another ethernet device
+SETPING : Enables or disables ping responses
+SETDHCP : Enables or disables a dynamic IP address
+NETSTAT : Prints the ethernet network statistics
+PINFO : Request all processor status information
+QUIT : Quit a telnet session
+CLEARIP : Clears the processors ip address
+SETIP : Sets the processors ip address
+RELEASEIP : Releases an IP address obtained by DHCP
+RENEWIP : Renews an IP address obtained by DHCP
+SETSUBNET : Sets the processors subnet mask
+SETGATEWAY : Sets the processors gateway address
+SETTELNET : Sets the processors telnet port
+SETFTP : Sets the processors ftp port
+SETHTTP : Sets the processors http port
+SETNET : Sets the processors network info
+SETAMX : Enables or disables the AMX beacon
+SETNAME : Sets the processor's NetBIOS name
+ENABLENAME : Enables one of the processor's NetBIOS names
+RELNAME : Releases one of the processor's NetBIOS names
+

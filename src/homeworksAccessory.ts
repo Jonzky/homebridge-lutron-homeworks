@@ -226,13 +226,13 @@ export class HomeworksLightAccessory extends HomeworksAccessory {
       return;
     }
 
-    if (targetBrightnessVal > 0) {
+    this._dimmerState.Brightness = targetBrightnessVal as number;
+    if (this._dimmerState.Brightness > 0) {
       this._dimmerState.On = true;
-    } else if (targetBrightnessVal <= 0) {
+    } else if (this._dimmerState.Brightness <= 0) {
       this._dimmerState.On = false;
     }
 
-    this._dimmerState.Brightness = targetBrightnessVal as number;
     this._service.updateCharacteristic(this._platform.Characteristic.On, this._dimmerState.On);
     this._service.updateCharacteristic(this._platform.Characteristic.Brightness, this._dimmerState.Brightness);
   }
