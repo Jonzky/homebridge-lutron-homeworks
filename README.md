@@ -47,7 +47,7 @@ Add a platform block to `config.json`, or use the Homebridge UI. The `platform` 
 
 - **light**: a Lightbulb. Turning a dimmable light on restores its last level rather than jumping to 100%.
 - **shade**: a Window Covering whose position is the dimmer level. Position state follows the processor's confirmation.
-- **blind**: a blind whose motor is driven by relays, where the dimmer level is a command code rather than a position. HomeKit shows three switches named `<name> Raise`, `<name> Lower` and `<name> Stop`. Raise and Lower stay on while the processor reports the matching code and send the stop code when switched off; Stop is momentary. Because the processor keeps reporting the last code, the switches turn off on their own after a minute.
+- **blind**: a blind whose motor is driven by relays, where the dimmer level is a command code rather than a position. HomeKit shows one accessory with three switches labelled Raise, Lower and Stop (use "Show as separate tiles" in the Home app's accessory settings if you prefer three tiles). Raise and Lower stay on while the processor reports the matching code and send the stop code when switched off; Stop is momentary. Renaming a switch in the Home app sticks. Because the processor keeps reporting the last code, the switches turn off on their own after a minute.
 
 Devices with a missing name or integration ID, or with a duplicate integration ID, are skipped with a warning in the Homebridge log. A missing host or an invalid port is logged as an error and the plugin stays inactive.
 

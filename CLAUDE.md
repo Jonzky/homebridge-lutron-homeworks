@@ -64,7 +64,7 @@ Idle -> Connecting -> Connected --LOGIN:--> Authenticating --LNET>--> Establishi
 
 ### `src/homeworksAccessory.ts` (HAP adapters)
 
-`HomeworksAccessory.CreateAccessory` picks the subclass by `deviceType`. Each subclass wraps a controller: `publish` pushes state to characteristics with `updateCharacteristic`, HomeKit writes go through `onGet`/`onSet` (never the legacy `'get'`/`'set'` events). Non-dimmable lights never touch Brightness and remove a stale one from the cache, because HAP silently adds optional characteristics on `updateCharacteristic`. Each subclass calls `pruneServices` to drop services of the other device types left in the cache. Blinds are three `Switch` services with subtypes `raise`, `lower`, `stop`. The platform calls `handleProcessorLevel(level)` and sets `onSendLevel`.
+`HomeworksAccessory.CreateAccessory` picks the subclass by `deviceType`. Each subclass wraps a controller: `publish` pushes state to characteristics with `updateCharacteristic`, HomeKit writes go through `onGet`/`onSet` (never the legacy `'get'`/`'set'` events). Non-dimmable lights never touch Brightness and remove a stale one from the cache, because HAP silently adds optional characteristics on `updateCharacteristic`. Each subclass calls `pruneServices` to drop services of the other device types left in the cache. Blinds are three `Switch` services with subtypes `raise`, `lower`, `stop`, labelled through `ConfiguredName` (the Home app ignores `Name` for services inside an accessory); it is set only when empty so a Home app rename persists. The platform calls `handleProcessorLevel(level)` and sets `onSendLevel`.
 
 ### `src/platform.ts` (glue)
 

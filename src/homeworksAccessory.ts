@@ -195,7 +195,8 @@ export class HomeworksShadeAccessory extends HomeworksAccessory {
 }
 
 /**
- * A relay-driven blind with no position feedback, exposed as three switches:
+ * A relay-driven blind with no position feedback, exposed as three switches named
+ * Raise, Lower and Stop inside one accessory:
  * Raise and Lower stay on while the processor reports the matching code and
  * send the stop code when switched off; Stop is momentary.
  */
@@ -211,9 +212,9 @@ export class HomeworksBlindAccessory extends HomeworksAccessory {
     const { Service, Characteristic } = host;
 
     this.pruneServices([Service.Switch]);
-    this.raise = this.switchService('raise', `${config.name} Raise`);
-    this.lower = this.switchService('lower', `${config.name} Lower`);
-    this.stop = this.switchService('stop', `${config.name} Stop`);
+    this.raise = this.switchService('raise', 'Raise');
+    this.lower = this.switchService('lower', 'Lower');
+    this.stop = this.switchService('stop', 'Stop');
 
     this.controller = new BlindController(config.blindLevels ?? DEFAULT_BLIND_LEVELS, {
       sendLevel: level => this.sendLevel(level),
@@ -261,6 +262,13 @@ export class HomeworksBlindAccessory extends HomeworksAccessory {
     const { Service, Characteristic } = this.host;
     const service = this.accessory.getServiceById(Service.Switch, subtype) || this.accessory.addService(Service.Switch, name, subtype);
     service.setCharacteristic(Characteristic.Name, name);
+    // The Home app labels services inside an accessory by ConfiguredName (iOS 16+), not Name.
+    // Set it only when empty so a rename made in the Home app survives restarts.
+    service.addOptionalCharacteristic(Characteristic.ConfiguredName);
+    const configuredName = service.getCharacteristic(Characteristic.ConfiguredName);
+    if (!configuredName.value) {
+      configuredName.updateValue(name);
+    }
     return service;
   }
 

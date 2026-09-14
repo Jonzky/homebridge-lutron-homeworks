@@ -132,9 +132,25 @@ function blind(existing?: Accessory) {
 describe('HomeworksBlindAccessory', () => {
   it('exposes three switches named Raise, Lower and Stop', () => {
     const { raise, lower, stop } = blind();
-    expect(raise.getCharacteristic(Characteristic.Name).value).toBe('Study Raise');
-    expect(lower.getCharacteristic(Characteristic.Name).value).toBe('Study Lower');
-    expect(stop.getCharacteristic(Characteristic.Name).value).toBe('Study Stop');
+    expect(raise.getCharacteristic(Characteristic.Name).value).toBe('Raise');
+    expect(lower.getCharacteristic(Characteristic.Name).value).toBe('Lower');
+    expect(stop.getCharacteristic(Characteristic.Name).value).toBe('Stop');
+  });
+
+  it('sets ConfiguredName so the Home app shows the switch names', () => {
+    const { raise, lower, stop } = blind();
+    expect(raise.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Raise');
+    expect(lower.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Lower');
+    expect(stop.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Stop');
+  });
+
+  it('keeps a ConfiguredName the user changed in the Home app', () => {
+    const cached = new Accessory('Study', uuid.generate('01:01:00:03:01'));
+    const renamed = cached.addService(Service.Switch, 'Raise', 'raise');
+    renamed.addOptionalCharacteristic(Characteristic.ConfiguredName);
+    renamed.setCharacteristic(Characteristic.ConfiguredName, 'Up');
+    const { raise } = blind(cached);
+    expect(raise.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Up');
   });
 
   it('turning the Raise switch on sends the raise code and turning it off sends stop', async () => {
