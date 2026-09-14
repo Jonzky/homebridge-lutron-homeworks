@@ -141,3 +141,5 @@ dist
 .yarn/unplugged
 .yarn/build-state.yml
 .pnp.*
+# unused screenshot
+img_1.png
