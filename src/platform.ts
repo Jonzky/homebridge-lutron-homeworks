@@ -81,7 +81,7 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
       return;
     }
     this.log.debug('[Platform] %s reported level %d', target.getName(), report.level);
-    target.updateBrightness(report.level);
+    target.handleProcessorLevel(report.level);
   }
 
   /** Pull the current level of every device, spaced out so the processor is not flooded. */
@@ -137,7 +137,7 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
       this.log.info('[Platform] Registering %s (%s, id %s%s)',
         device.name, device.deviceType, device.integrationID, device.isDimmable ? ', dimmable' : '');
       const homeworksAccessory = HomeworksAccessory.CreateAccessory(this, accessory, uuid, device);
-      homeworksAccessory.lutronLevelChangeCallback = (value, _isDimmable, target) => sendLevel(value, target);
+      homeworksAccessory.onSendLevel = sendLevel;
       this.homeworksAccessories.set(uuid, homeworksAccessory);
       kept.push(accessory);
     }
