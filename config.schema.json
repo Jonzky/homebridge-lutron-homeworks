@@ -1,68 +1,108 @@
 {
-  "pluginAlias": "Homeworks-Alt",
+  "pluginAlias": "Homeworks-alt",
   "pluginType": "platform",
-  "headerDisplay": "Processor and Lights",
-  "footerDisplay": "Please verify your integrationIDs from your database XML file",
   "singular": false,
+  "headerDisplay": "Lutron HomeWorks processors that use the telnet integration protocol with the LNET> prompt (FADEDIM / DLMON / RDL).",
+  "footerDisplay": "Integration IDs must match the address the processor reports in DL lines, without the brackets (for example 01:01:00:01:04). See the README for extracting them from the processor's XML database.",
   "schema": {
     "type": "object",
-    "properties": {     
+    "properties": {
       "host": {
-        "title": "Homeworks Telnet IP Address",
+        "title": "Processor address",
         "type": "string",
-        "format": "ipv4"
-      }, 
-        "apiPort": {
+        "required": true,
+        "placeholder": "192.168.1.50",
+        "description": "IP address or hostname of the HomeWorks processor."
+      },
+      "apiPort": {
+        "title": "Telnet port",
         "type": "integer",
-        "title": "Port",
-        "maxLength": 5,
-        "pattern": "^[0-9]*$",
-        "placeholder": "23",
-        "description": "Processor Port No."
+        "default": 23,
+        "minimum": 1,
+        "maximum": 65535
       },
       "username": {
-        "title": "Username",
-        "type": "string"
+        "title": "Login",
+        "type": "string",
+        "description": "Sent at the processor's LOGIN: prompt. On Illumination-era processors this is the whole login string."
       },
       "password": {
         "title": "Password",
-        "type": "string"
-      },  
+        "type": "string",
+        "description": "Only sent if the processor asks with a separate PASSWORD: prompt. Leave empty otherwise."
+      },
       "devices": {
         "type": "array",
         "title": "Devices",
-        "description": "Light Directory",
         "items": {
           "type": "object",
           "properties": {
-            "deviceType": {
-              "type": "string",
-              "title": "Device Type",
-              "oneOf":
-              [
-                { "title": "Light", "enum": ["light"] },
-                { "title": "Shade", "enum": ["shade"] }
-              ],
-              "required": true,
-              "placeholder": "light"
-            },
             "name": {
               "type": "string",
-              "title": "Light Name",
+              "title": "Name",
               "required": true,
-              "placeholder": "Livingroom"
+              "placeholder": "Living room"
             },
             "integrationID": {
               "type": "string",
               "title": "Integration ID",
               "required": true,
-              "placeholder": "70"
+              "placeholder": "01:01:00:01:04",
+              "description": "Processor address exactly as reported in DL lines, brackets removed. Changing it re-creates the HomeKit accessory."
+            },
+            "deviceType": {
+              "type": "string",
+              "title": "Device type",
+              "default": "light",
+              "required": true,
+              "oneOf": [
+                { "title": "Light", "enum": ["light"] },
+                { "title": "Shade (level is the position)", "enum": ["shade"] },
+                { "title": "Blind (raise / lower / stop buttons)", "enum": ["blind"] }
+              ]
             },
             "isDimmable": {
               "type": "boolean",
-              "title": "Is dimmable",
-              "default": true
-            }            
+              "title": "Dimmable",
+              "default": false,
+              "description": "Lights only. Adds a brightness slider in HomeKit.",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].deviceType === 'light';"
+              }
+            },
+            "raiseLevel": {
+              "type": "integer",
+              "title": "Raise code",
+              "placeholder": 16,
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Blinds only. Dimmer level that makes the blind go up.",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].deviceType === 'blind';"
+              }
+            },
+            "lowerLevel": {
+              "type": "integer",
+              "title": "Lower code",
+              "placeholder": 35,
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Blinds only. Dimmer level that makes the blind go down.",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].deviceType === 'blind';"
+              }
+            },
+            "stopLevel": {
+              "type": "integer",
+              "title": "Stop code",
+              "placeholder": 0,
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Blinds only. Dimmer level that stops the blind.",
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].deviceType === 'blind';"
+              }
+            }
           }
         }
       }

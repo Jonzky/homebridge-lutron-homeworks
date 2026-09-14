@@ -1,72 +1,81 @@
-# Homebridge Lutron Homeworks Plugin (Minor edits)
+# homebridge-homeworks-alt
 
-## Edited Intro
-This is a very minorly edited plugin that is based on kikolobo's work - I just noticed for my lutron homeworks the commands were slightly different, so some minor tweaking was needed. I'm assuming I'm on an earlier version as its 10+ years old now.
+A [Homebridge](https://homebridge.io) platform plugin for Lutron HomeWorks processors that speak the older telnet integration protocol: the `LNET>` prompt and commands such as `FADEDIM`, `DLMON` and `RDL` (Illumination-era systems). It is a fork of [kikolobo's homebridge-lutron-homeworks](https://github.com/kikolobo/homebridge-lutron-homeworks), which now targets HomeWorks QS and its `#OUTPUT` protocol. Full credit to kikolobo for the original.
 
-Originally I struggled to access the proccessor info (XML file) - but in my case I was also to login with the credentials (username,password): LutronGUI,jetski.
+Requires Node.js 20 or newer and Homebridge 1.8 or newer, including Homebridge 2.x.
 
-The server allowed anonymous FTP and I was able to access 'fullxml.dat' - which is actually a zip, so you can just unzip it and then you have access to the XML file.
+## What it does
 
-
-## Welcome:
-This is a HomeBridge plugin to integrate Lutron Homeworks lighting systems to Homekit. This will help control your lights of your lutron system with Apple Homekit.
-
-In the current version the plugin only works with lights or 'Outputs' and it has only been tested with Homeworks QS systems. It should work with any Lutron processor that has network (telnet) capabilities and conforms to the lutron integration protocol (like Caseta/RadioRA I, II).
-
-I plan to integrate more devices like viartual keypad presses and sensors if the plugin gets enough traction.
-
-Also included is a small helper web-app that will help with the process of creating your setup a lot easier. See the Setup section below.
-
-##We are in Beta:
-This plugin is in beta phase. So please keep in mind that we are updating master branch often. Please file an issue to contribute to our progress or even better... A pull request!.
-
-# Setup
-## Installation
-To install, please follow normal Homebridge install procedures, and use the config UI to add lights. This plugin is available thru NPM so you can go to your Homebridge UI and search for the plugin name 'homebridge-lutron-homeworks' and it should appear for installation.
-
-## Processor Network Access (telnet)
-You will need access to your processor via the network. In lutron lingo this is called telnet access. You will need to gather the username/password  from your installer. You may also try the default credentials: (username: lutron | password: integration) (username: nwk | password: nwk)
+- Lights (on/off, optionally dimmable) and shades driven as dimmer levels.
+- Relay-driven blinds that only understand raise, lower and stop.
+- Live state: the plugin enables dimmer level monitoring on the processor, so changes made from keypads or other apps show up in HomeKit.
+- A resilient connection: line-based parsing of the telnet stream, keepalive with dead-peer detection, reconnect with backoff, and commands queued while reconnecting.
 
 ## Configuration
-The processor credentials/address and the lights or loads that you will like to control should be configured in the homebridge json setup file. You may also use the Homebridge UI addon to set your options and lights.
 
-This is a platform plugin. Meaning that when homebridge boots/starts, this plugin will add or update all the lights to reflect the options in your setup file. If you later change a name in the config the name will be updated automatically to Homekit. However if you change the name from the homekit side, your setup names will take no effect in HomeKit anymore. If you remove or add lights in the future in your config file, the plugin will remove or add them to HK as required.  This update cycle happens everytime homebridge boots or starts.
+Add a platform block to `config.json`, or use the Homebridge UI. The `platform` value must be exactly `Homeworks-alt`.
 
-## UI Setup
-You can also use the Homebridge UI setup page/tool that takes advantage of the UI setup plugin. Login into your UI admin, search for the plugin and press setup button. You may use the javascript tool shown in the previous paragraph to initially pull the data from Lutron's processor, and then use the UX/UI to modify or update the lights to your liking.
+```json
+{
+  "platform": "Homeworks-alt",
+  "host": "192.168.1.50",
+  "apiPort": 23,
+  "username": "jetski",
+  "password": "",
+  "devices": [
+    { "name": "Kitchen", "integrationID": "01:01:00:01:04", "deviceType": "light", "isDimmable": true },
+    { "name": "Hall", "integrationID": "01:01:00:01:05", "deviceType": "light" },
+    { "name": "Study shade", "integrationID": "01:01:00:02:01", "deviceType": "shade" },
+    { "name": "Lounge blind", "integrationID": "01:01:00:03:01", "deviceType": "blind" }
+  ]
+}
+```
 
-## Lutron/Homekit Setup Helper Tool
-When your lutron processor is setup for your home or office, the light names and zones are stored in the processor in an XML (file) database. This file is accesible from the processor. You will need an endpoint or access to the web UI of the homeworks processor. The file is a plain text file, but is optimized for machine reading and not human reading, which makes it difficult to understand. We have included a small app that will help convert this XML file to a JSON configuration that is compatible with this plugin.
+| Field | Notes |
+|---|---|
+| `host` | Required. IP address or hostname of the processor. |
+| `apiPort` | Telnet port. Defaults to 23. |
+| `username` | Sent at the processor's `LOGIN:` prompt. On Illumination-era processors this is the whole login string. |
+| `password` | Only sent if the processor issues a separate `PASSWORD:` prompt. Leave empty otherwise. |
+| `devices[].name` | HomeKit name. |
+| `devices[].integrationID` | The address the processor reports in `DL` lines, without the brackets. The HomeKit accessory identity is derived from it, so changing it re-creates the accessory. |
+| `devices[].deviceType` | `light` (default), `shade` or `blind`. |
+| `devices[].isDimmable` | Lights only. Omitted means not dimmable. |
+| `devices[].raiseLevel`, `lowerLevel`, `stopLevel` | Blinds only. Defaults 16, 35 and 0. |
 
-It is a simple Javascript app wrapped into an HTML file. Open it in any modern browser and follow the on screen instructions. 
+### Device types
 
-Note: that it does not do validations of data, so double check your configuration fields like host, port, username, etc.
+- **light**: a Lightbulb. Turning a dimmable light on restores its last level rather than jumping to 100%.
+- **shade**: a Window Covering whose position is the dimmer level. Position state follows the processor's confirmation.
+- **blind**: a blind whose motor is driven by relays, where the dimmer level is a command code rather than a position. HomeKit shows three switches named `<name> Raise`, `<name> Lower` and `<name> Stop`. Raise and Lower stay on while the processor reports the matching code and send the stop code when switched off; Stop is momentary. Because the processor keeps reporting the last code, the switches turn off on their own after a minute.
 
-The config helper is located here:
-https://github.com/kikolobo/homebridge-lutron-homeworks/tree/master/LutronXML_Parsin_Tool
+Devices with a missing name or integration ID, or with a duplicate integration ID, are skipped with a warning in the Homebridge log. A missing host or an invalid port is logged as an error and the plugin stays inactive.
 
-More info on the extraction process here:
-https://www.lutron.com/TechnicalDocumentLibrary/HWQS_XML_Extraction_FAQ.pdf
+## Getting the integration IDs
 
-## WebStorm/IntelliJ Setup
+The processor stores its database as XML. The processor allows anonymous FTP; `fullxml.dat` is a zip that contains the XML file. On the author's processor the credentials `LutronGUI` / `jetski` also worked for the processor software. Lutron's [XML extraction FAQ](https://www.lutron.com/TechnicalDocumentLibrary/HWQS_XML_Extraction_FAQ.pdf) describes the process for QS systems.
 
+`LutronXML_Parsin_Tool/DbXParser.html` is a small browser page that converts that XML into a `devices` array for this plugin. Open it in a browser, fill in host, port and login, load the XML file, and paste the generated JSON into your Homebridge configuration. It does no validation, so check the result.
 
-Start at the root of where this plugin will be installed
-* ```git clone https://github.com/nfarina/homebridge.git```
+The simplest way to confirm an integration ID is to connect with telnet, send `DLMON`, operate the load from a keypad, and read the address from the `DL, [address], level` line the processor prints.
 
-    This installs a local homebridge for testing
-* ```cd homebridge```
-* ```npm install```
-* ```npm install homebridge-config-ui-x ```
-* ```npm build```
-* ```mkdir config```
-* ```cd config```
-* Create a default ```config.json``` in the current directory. See homebridge docs for details
-* ```cd ..\..```
-* ```git clone https://github.com/XXX/homebridge-lutron-homeworks.git```
-* ```npm install```
-* ```npm build```
-* Start Webstorm and open the ```homebridge-lutron-homeworks``` directory as a project
-* Create a run/debug configuration that looks like: ![img_1.png](img_1.png)
+## Default processor credentials
 
-You're good to go!
+Try the ones your installer provided first. Known defaults on various HomeWorks systems include `jetski` (Illumination telnet login), `lutron` / `integration` and `nwk` / `nwk`.
+
+## Development
+
+```bash
+npm install
+npm run lint       # ESLint, warnings fail
+npm run typecheck  # tsc without emitting
+npm test           # vitest unit tests (protocol framing, config, controllers, HAP accessories)
+npm run build      # compiles src/ to dist/
+npm run watch      # build, npm link, then restart Homebridge on changes (homebridge -I -D)
+```
+
+`known_commands.txt` is the processor's own `HELP` output and documents every command the telnet interface accepts.
+
+## Licence
+
+Apache-2.0. Original work by kikolobo.
