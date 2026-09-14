@@ -1,25 +1,21 @@
+export type DeviceType = 'light' | 'shade';
+
 /**
- * Represents a load/device from the homeworks processor.
+ * One load on the processor, as it appears in config.json after normalization.
  */
 export interface ConfigDevice {
-
-  /**
-     * Gets or sets a unique name for the device that will also be used in the API.
-     */
+  /** Display name in HomeKit. */
   name: string;
 
   /**
-     * Gets or sets the integration ID of the light/load/dimmer
-     */
+   * Processor address exactly as the processor reports it in `DL` lines with the
+   * brackets removed (e.g. `01:01:00:01:04`). The HomeKit UUID is derived from it,
+   * so it must not change once an accessory has been paired.
+   */
   integrationID: string;
 
-  /**
-     * Type of device
-     */
-  deviceType: string;
+  deviceType: DeviceType;
 
-  /**
-     * Gets or sets a value that determines whether is dimmable 
-     */
-  isDimmable: boolean;    
+  /** Exposes a Brightness characteristic. Omitted in config means false. */
+  isDimmable: boolean;
 }

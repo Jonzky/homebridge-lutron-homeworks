@@ -1,201 +1,151 @@
 import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, Service, Characteristic } from 'homebridge';
 import { Configuration } from './Schemas/configuration';
+import { ConfigDevice } from './Schemas/device';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
 import { HomeworksAccessory } from './homeworksAccessory';
 import { NetworkEngine } from './network';
+import { normalizeConfiguration } from './config';
+import { parseDlLine, fadeDimCommand, requestLevelCommand } from './protocol';
+
+/** Spacing between the per-device level requests issued after each connect. */
+const LEVEL_REQUEST_INTERVAL_MS = 1000;
 
 export class HomeworksPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
   public readonly Characteristic: typeof Characteristic;
-  private configuration: Configuration = {devices:[], apiPort:23, host:'127.0.0.1', username:'', password:''};
-  private readonly engine: NetworkEngine;
+  private readonly configuration: Configuration | null;
+  private readonly engine: NetworkEngine | null;
   private readonly cachedPlatformAccessories: PlatformAccessory[] = [];
-  private readonly homeworksAccessories: HomeworksAccessory[] = [];
+  /** Live accessories keyed by HomeKit UUID, which is derived from the integration ID. */
+  private readonly homeworksAccessories = new Map<string, HomeworksAccessory>();
+  private levelRequestTimers: ReturnType<typeof setTimeout>[] = [];
 
   constructor(
     public readonly log: Logger,
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
-    this.Service = this.api.hap.Service;
-    this.Characteristic = this.api.hap.Characteristic;
-    this.loadUserConfiguration();
+    this.Service = api.hap.Service;
+    this.Characteristic = api.hap.Characteristic;
 
-    this.engine = new NetworkEngine(
-      this.log, 
-      this.configuration.host,
-      this.configuration.apiPort, 
-      this.configuration.username, 
-      this.configuration.password,      
-    );
+    const { configuration, problems, warnings } = normalizeConfiguration(config);
+    for (const warning of warnings) {
+      log.warn('[Platform] %s', warning);
+    }
+    for (const problem of problems) {
+      log.error('[Platform] %s', problem);
+    }
+    this.configuration = configuration;
 
-    this.setupNetworkEngineCallbacks(this.engine);    
+    if (configuration) {
+      this.engine = new NetworkEngine(log, configuration.host, configuration.apiPort, configuration.username, configuration.password);
+      this.engine.registerReceiveCallback((_engine, line) => this.handleProcessorLine(line));
+      this.engine.registerDidConnectCallback(() => this.requestAllLevels());
+    } else {
+      this.engine = null;
+      log.error('[Platform] Configuration is invalid; the plugin will not connect. Fix config.json and restart Homebridge.');
+    }
 
-    this.api.on('didFinishLaunching', () => {  
-      this.log.debug('[Platform] didFinishLaunching:');    
-      this.discoverDevices();
-      this.engine.connect();      
+    api.on('didFinishLaunching', () => {
+      if (!this.configuration || !this.engine) {
+        return;
+      }
+      this.discoverDevices(this.configuration.devices);
+      this.engine.connect();
+    });
+
+    api.on('shutdown', () => {
+      this.clearLevelRequests();
+      this.engine?.shutdown();
     });
   }
 
-  // <<<<<<<<<<<<<<<<[SETUP HELPERS]<<<<<<<<<<<<<<<<<
-  /**
-   * Loads and parses de user config.json for this platform
-   */
-  private loadUserConfiguration() {
-    this.configuration = JSON.parse(JSON.stringify(this.config));
-    this.log.debug('[Platform] User Configuration Loaded.');
-  }
-
-
-  // <<<<<<<<<<<<<<<<<<[NETWORKING]<<<<<<<<<<<<<<<<<<<
-  /**
-   * Register NetworkEngine Event Callbacks
-   * Create callback for new message. 
-   * This callback will be called everytime we get a new msg from the processor (socket)
-   */
-  private setupNetworkEngineCallbacks(engine: NetworkEngine) {
-
-
-    const rxCallback = (engine: NetworkEngine, message:string) : void => {   //ON SOCKET TRAFFIC CALLBACK
-      const messagesArray = message.split('\n');
-
-      for (let singleMessage of messagesArray) {
-        singleMessage = singleMessage.trim();
-
-        if (singleMessage === '') {
-          continue; 
-        }
-       
-        if (singleMessage.includes('P001')) { //This is considered a PONG reply.
-          this.log.debug('[platform][Pong] Received'); //TODO: Move to NETWORK Class (why waste cycles here)
-          continue;
-        }
-
-        if (!singleMessage.includes('GLINK_DEVICE_SERIAL_NUM') &&
-            !singleMessage.includes('Device serial ')) {
-          this.log.info('[platform][traffic]', singleMessage);
-        }
-
-        const splittedMessage = singleMessage.split(',');  //Parse Message by splitting comas
-        if (splittedMessage && (splittedMessage[0] === 'DL')) {   //Update Message from processor. (1 means update)
-          this.log.info('DL message: ' + singleMessage);
-          const deviceId = splittedMessage[1].trim().slice(1, -1);  //Assign values from splitted message
-          const brigthness = Number(splittedMessage[2].trim());
-          const uuid = this.api.hap.uuid.generate(deviceId);
-          this.log.info('deviceId: ' + deviceId);
-          const targetDevice = this.homeworksAccessories.find(accessory => accessory.getUUID() === uuid);
-          this.log.info('targetDevice: ' + targetDevice);
-
-          if (targetDevice) { //If we find a device, it means we are observing it and need the value.
-            this.log.info('[Platform][EngineCallback] Set: %s to: %i', targetDevice.getName(), brigthness);
-            targetDevice.updateBrightness(brigthness); 
-          }
-        }
-      }
-      
-    };
-
-    // * Will be called eveytime we connect to the processor (socket)
-    const connectedCallback = (engine: NetworkEngine) : void => {      
-      //When we connect. We want to get the latest state for the lights. So we issue a query
-      //  NOTE: If the device is being updated elsewhere (like another app or switch) this
-      //  value may be incorrect
-      let i = 1;
-      for (const accessory of this.homeworksAccessories) {
-        const waitTime = i * 1000;
-        this.log.debug('[Platform] Requesting level for:', accessory.getName());
-        setTimeout(() => {
-          this.log.debug('Waited ' + waitTime + 's before sending - ' + accessory.getName());
-          const command = `RDL, ${accessory.getIntegrationId()}`;
-          engine.send(command);
-        }, waitTime);
-        i++;
-      }
-    };
-
-    // * Do register the callbacks in the network engine
-    engine.registerReceiveCallback(rxCallback);
-    engine.registerDidConnectCallback(connectedCallback);    
-  }
-
-  // <<<<<<<<<<<<<<<<<<[Homebridge API]<<<<<<<<<<<<<<<<<<<
-  /**
-   * Delegate: Called when homebridge restores cached accessories from disk at startup.
-   */
-  configureAccessory(accessory: PlatformAccessory) {
-    this.log.info('Loading accessory from cache:', accessory.displayName);    
+  /** Homebridge restores accessories from its cache through here before didFinishLaunching. */
+  configureAccessory(accessory: PlatformAccessory): void {
+    this.log.debug('[Platform] Restoring cached accessory: %s', accessory.displayName);
     this.cachedPlatformAccessories.push(accessory);
   }
-  
-  /**
-   * Register devices in HomeKit (When API finishes launching)
-   */
-  discoverDevices() {
-    //TODO: Move elsewhere. 
-    //This will be called when a request from HK comes to change a value in the processor
-    const brightnessChangeCallback = (value: number, isDimmable: boolean, accessory:HomeworksAccessory) : void => { //Callback from HK
-      
-      const command = `FADEDIM, ${value}, 0, 0, ${accessory.getIntegrationId()}`;
-      accessory.updateBrightness(value); //Shall we update it locally?
 
-      this.log.debug('[Platform][setLutronCallback] %s to %s (%s)', accessory.getName(), value, command);
-      this.engine.send(command);          
+  // ---- processor -> HomeKit ----
+
+  private handleProcessorLine(line: string): void {
+    const report = parseDlLine(line);
+    if (!report) {
+      this.log.debug('[Platform] < %s', line);
+      return;
+    }
+    const uuid = this.api.hap.uuid.generate(report.address);
+    const target = this.homeworksAccessories.get(uuid);
+    if (!target) {
+      this.log.debug('[Platform] Level report for an address not in the config: %s = %d', report.address, report.level);
+      return;
+    }
+    this.log.debug('[Platform] %s reported level %d', target.getName(), report.level);
+    target.updateBrightness(report.level);
+  }
+
+  /** Pull the current level of every device, spaced out so the processor is not flooded. */
+  private requestAllLevels(): void {
+    this.clearLevelRequests();
+    let index = 0;
+    for (const accessory of this.homeworksAccessories.values()) {
+      const timer = setTimeout(() => {
+        this.engine?.send(requestLevelCommand(accessory.getIntegrationId()));
+      }, index * LEVEL_REQUEST_INTERVAL_MS);
+      this.levelRequestTimers.push(timer);
+      index++;
+    }
+  }
+
+  private clearLevelRequests(): void {
+    for (const timer of this.levelRequestTimers) {
+      clearTimeout(timer);
+    }
+    this.levelRequestTimers = [];
+  }
+
+  // ---- HomeKit accessory reconciliation ----
+
+  /**
+   * Adds, updates or removes HomeKit accessories to match the config. Runs once
+   * per Homebridge start; the accessory UUID is derived from the integration ID.
+   */
+  private discoverDevices(devices: ConfigDevice[]): void {
+    const sendLevel = (value: number, accessory: HomeworksAccessory): void => {
+      this.log.debug('[Platform] %s -> %d', accessory.getName(), value);
+      this.engine?.send(fadeDimCommand(value, accessory.getIntegrationId()));
     };
 
-    //The following will iterate thru the config file, check if the device is cached or updated.
-    //And also check if we find a device that is no longer in HK but was. And issue a remove.
-    const allAddedAccesories: PlatformAccessory[] = []; 
+    const kept: PlatformAccessory[] = [];
 
-    for (const confDevice of (this.configuration.devices || [])) {       //Iterate thru the devices in config.
-      const uuid = this.api.hap.uuid.generate(confDevice.integrationID);            
-      let loadedAccessory = this.cachedPlatformAccessories.find(accessory => accessory.UUID === uuid);
-  
-      if (loadedAccessory === undefined || loadedAccessory === null) { //New Device
-        this.log.info('[Platform] + Creating:', confDevice.name);
-        const accessory = new this.api.platformAccessory(confDevice.name, uuid);
-        accessory.context.device = confDevice;
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
-        loadedAccessory = accessory;
-      } else { //Updated Device
-        this.log.debug('[Platform] ~ Updating:', confDevice.name);
-        loadedAccessory.context.device = confDevice;
-        loadedAccessory.displayName = confDevice.name; //Will be updated unless changed in Homekit.
-        this.api.updatePlatformAccessories([loadedAccessory]);
-      }
-      
-      if (loadedAccessory) {
-        //Registering to platform
-        let isDimmable = true;
-        if (confDevice.isDimmable === undefined || confDevice.isDimmable === false) {
-          isDimmable = false;
-          confDevice.isDimmable = isDimmable;
-        }
+    for (const device of devices) {
+      const uuid = this.api.hap.uuid.generate(device.integrationID);
+      let accessory = this.cachedPlatformAccessories.find(cached => cached.UUID === uuid);
 
-        this.log.info('[Platform] Registering: %s as %s Dimmable: %s', loadedAccessory.displayName, confDevice.name, isDimmable);
-         
-        const hwa = HomeworksAccessory.CreateAccessory(this, loadedAccessory, loadedAccessory.UUID, confDevice);
-        this.homeworksAccessories.push(hwa);
-        hwa.lutronLevelChangeCallback = brightnessChangeCallback;
-        allAddedAccesories.push(loadedAccessory);
+      if (accessory) {
+        this.log.debug('[Platform] Updating %s', device.name);
+        accessory.context.device = device;
+        accessory.displayName = device.name;
+        this.api.updatePlatformAccessories([accessory]);
       } else {
-        this.log.error('[platform][Error] Unable to load accessory: %s', confDevice.name);
-      }            
+        this.log.info('[Platform] Adding %s', device.name);
+        accessory = new this.api.platformAccessory(device.name, uuid);
+        accessory.context.device = device;
+        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+      }
+
+      this.log.info('[Platform] Registering %s (%s, id %s%s)',
+        device.name, device.deviceType, device.integrationID, device.isDimmable ? ', dimmable' : '');
+      const homeworksAccessory = HomeworksAccessory.CreateAccessory(this, accessory, uuid, device);
+      homeworksAccessory.lutronLevelChangeCallback = (value, _isDimmable, target) => sendLevel(value, target);
+      this.homeworksAccessories.set(uuid, homeworksAccessory);
+      kept.push(accessory);
     }
 
-    const toDelete =
-      this.diference(this.cachedPlatformAccessories, allAddedAccesories) as PlatformAccessory[];
-    if (toDelete.length > 0) {
-      this.log.warn('[platform] Removing: %i accesories', toDelete.length);
-      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, toDelete);
+    const stale = this.cachedPlatformAccessories.filter(cached => !kept.includes(cached));
+    if (stale.length > 0) {
+      this.log.warn('[Platform] Removing %d accessories that are no longer in the config', stale.length);
+      this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, stale);
     }
-
   }
-
-  //Helper function to get the diference in an array
-  diference(a: PlatformAccessory[], b: PlatformAccessory[]) {
-    const setB = new Set(b);
-    return [...new Set(a)].filter(x => !setB.has(x));
-  }
-
 }

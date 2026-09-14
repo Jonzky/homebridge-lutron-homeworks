@@ -1,36 +1,20 @@
 import { ConfigDevice } from './device';
 
 /**
- * Represents the homebridge configuration for the plugin.
+ * The plugin's platform block in config.json after normalization.
  */
 export interface Configuration {
-
-  /**
-     * Gets or sets the devices that should be exposed to HomeKit/via API.
-     */
-  devices: Array<ConfigDevice>;
-   
-    
-  /**
-     * Gets or sets the port at which the API should be available.
-     */
-  apiPort: number;
-    
-  /**
-     * Gets or sets the secret token that is used to authenticate against the API.
-     */
+  /** IP address or hostname of the HomeWorks processor. */
   host: string;
-    
-  /**
-     * Gets or sets the username for the Homeworks processor.
-     */
+
+  /** Telnet port of the processor. Defaults to 23. */
+  apiPort: number;
+
+  /** Sent at the processor's LOGIN: prompt. */
   username: string;
 
-  /**
-     * Gets or sets the password for the Homeworks processor.
-     */
+  /** Sent only if the processor issues a separate PASSWORD: prompt. */
   password: string;
 
-
-        
+  devices: ConfigDevice[];
 }
