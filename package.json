@@ -2,7 +2,7 @@
   "private": false,
   "displayName": "Homeworks",
   "name": "homebridge-homeworks-alt",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "Homeworks Plugin for HomeBridge, tweaks to work with my homeworks processor. Full credit to kikolobo for the original",
   "license": "Apache-2.0",
   "repository": {
