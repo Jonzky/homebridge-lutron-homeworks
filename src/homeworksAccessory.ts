@@ -1,7 +1,10 @@
-import { Service, PlatformAccessory, Characteristic } from 'homebridge';
-import { ConfigDevice } from './Schemas/device';
+import { Service, PlatformAccessory, Characteristic, WithUUID } from 'homebridge';
+import { ConfigDevice, DEFAULT_BLIND_LEVELS } from './Schemas/device';
 import { EngineLogger } from './network';
-import { LightController, ShadeController, ShadeMotion } from './controllers';
+import { LightController, ShadeController, ShadeMotion, BlindController } from './controllers';
+
+/** Momentary switches spring back to off after this long. */
+const MOMENTARY_RESET_MS = 1000;
 
 /** What an accessory needs from the platform. HomeworksPlatform satisfies this. */
 export interface AccessoryHost {
@@ -26,6 +29,8 @@ export abstract class HomeworksAccessory {
     switch (config.deviceType) {
       case 'shade':
         return new HomeworksShadeAccessory(host, accessory, uuid, config);
+      case 'blind':
+        return new HomeworksBlindAccessory(host, accessory, uuid, config);
       case 'light':
       default:
         return new HomeworksLightAccessory(host, accessory, uuid, config);
@@ -62,6 +67,22 @@ export abstract class HomeworksAccessory {
   /** Level the processor reported for this load, from a DL line or an RDL reply. */
   public abstract handleProcessorLevel(level: number): void;
 
+  /**
+   * Removes services of the other device types, so an accessory whose deviceType
+   * changed in the config does not keep showing its old controls from the cache.
+   */
+  protected pruneServices(keep: Array<WithUUID<typeof Service>>): void {
+    const types = this.host.Service;
+    const managed = [types.Lightbulb, types.WindowCovering, types.Switch];
+    const keepUuids = new Set(keep.map(type => type.UUID));
+    for (const service of [...this.accessory.services]) {
+      if (managed.some(type => type.UUID === service.UUID) && !keepUuids.has(service.UUID)) {
+        this.host.log.debug('[Accessory][%s] Removing stale %s service', this.getName(), service.displayName || service.UUID);
+        this.accessory.removeService(service);
+      }
+    }
+  }
+
   protected sendLevel(level: number): void {
     if (this.onSendLevel) {
       this.onSendLevel(level, this);
@@ -79,6 +100,7 @@ export class HomeworksLightAccessory extends HomeworksAccessory {
     super(host, accessory, uuid, config);
     const { Service, Characteristic } = host;
 
+    this.pruneServices([Service.Lightbulb]);
     this.service = accessory.getService(Service.Lightbulb) || accessory.addService(Service.Lightbulb);
     this.service.setCharacteristic(Characteristic.Name, config.name);
 
@@ -129,6 +151,7 @@ export class HomeworksShadeAccessory extends HomeworksAccessory {
     super(host, accessory, uuid, config);
     const { Service, Characteristic } = host;
 
+    this.pruneServices([Service.WindowCovering]);
     this.service = accessory.getService(Service.WindowCovering) || accessory.addService(Service.WindowCovering);
     this.service.setCharacteristic(Characteristic.Name, config.name);
 
@@ -168,5 +191,86 @@ export class HomeworksShadeAccessory extends HomeworksAccessory {
       default:
         return PositionState.STOPPED;
     }
+  }
+}
+
+/**
+ * A relay-driven blind with no position feedback, exposed as three switches:
+ * Raise and Lower stay on while the processor reports the matching code and
+ * send the stop code when switched off; Stop is momentary.
+ */
+export class HomeworksBlindAccessory extends HomeworksAccessory {
+  private readonly raise: Service;
+  private readonly lower: Service;
+  private readonly stop: Service;
+  private readonly controller: BlindController;
+  private stopResetTimer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(host: AccessoryHost, accessory: PlatformAccessory, uuid: string, config: ConfigDevice) {
+    super(host, accessory, uuid, config);
+    const { Service, Characteristic } = host;
+
+    this.pruneServices([Service.Switch]);
+    this.raise = this.switchService('raise', `${config.name} Raise`);
+    this.lower = this.switchService('lower', `${config.name} Lower`);
+    this.stop = this.switchService('stop', `${config.name} Stop`);
+
+    this.controller = new BlindController(config.blindLevels ?? DEFAULT_BLIND_LEVELS, {
+      sendLevel: level => this.sendLevel(level),
+      publish: state => {
+        this.raise.updateCharacteristic(Characteristic.On, state.motion === 'raising');
+        this.lower.updateCharacteristic(Characteristic.On, state.motion === 'lowering');
+      },
+    });
+
+    this.raise.getCharacteristic(Characteristic.On)
+      .onGet(() => this.controller.state.motion === 'raising')
+      .onSet(value => {
+        if (value) {
+          this.controller.homeKitRaise();
+        } else if (this.controller.state.motion === 'raising') {
+          this.controller.homeKitStop();
+        }
+      });
+
+    this.lower.getCharacteristic(Characteristic.On)
+      .onGet(() => this.controller.state.motion === 'lowering')
+      .onSet(value => {
+        if (value) {
+          this.controller.homeKitLower();
+        } else if (this.controller.state.motion === 'lowering') {
+          this.controller.homeKitStop();
+        }
+      });
+
+    this.stop.getCharacteristic(Characteristic.On)
+      .onGet(() => false)
+      .onSet(value => {
+        if (value) {
+          this.controller.homeKitStop();
+          this.springBackStop();
+        }
+      });
+  }
+
+  public handleProcessorLevel(level: number): void {
+    this.controller.processorLevel(level);
+  }
+
+  private switchService(subtype: string, name: string): Service {
+    const { Service, Characteristic } = this.host;
+    const service = this.accessory.getServiceById(Service.Switch, subtype) || this.accessory.addService(Service.Switch, name, subtype);
+    service.setCharacteristic(Characteristic.Name, name);
+    return service;
+  }
+
+  private springBackStop(): void {
+    if (this.stopResetTimer) {
+      clearTimeout(this.stopResetTimer);
+    }
+    this.stopResetTimer = setTimeout(() => {
+      this.stopResetTimer = undefined;
+      this.stop.updateCharacteristic(this.host.Characteristic.On, false);
+    }, MOMENTARY_RESET_MS);
   }
 }

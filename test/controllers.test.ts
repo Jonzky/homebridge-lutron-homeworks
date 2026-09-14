@@ -197,3 +197,87 @@ describe('ShadeController', () => {
     expect(published).toHaveLength(count);
   });
 });
+
+import { BlindController } from '../src/controllers';
+
+function makeBlind(options: { motionTimeoutMs?: number } = {}) {
+  const sent: number[] = [];
+  const published: string[] = [];
+  const controller = new BlindController({ raise: 16, lower: 35, stop: 0 }, {
+    sendLevel: level => sent.push(level),
+    publish: state => published.push(state.motion),
+  }, options);
+  return { controller, sent, published };
+}
+
+describe('BlindController', () => {
+  it('raise sends the raise code and reports raising', () => {
+    const { controller, sent, published } = makeBlind();
+    controller.homeKitRaise();
+    expect(sent).toEqual([16]);
+    expect(controller.state.motion).toBe('raising');
+    expect(published).toEqual(['raising']);
+  });
+
+  it('lower sends the lower code and reports lowering', () => {
+    const { controller, sent } = makeBlind();
+    controller.homeKitLower();
+    expect(sent).toEqual([35]);
+    expect(controller.state.motion).toBe('lowering');
+  });
+
+  it('stop sends the stop code and reports stopped', () => {
+    const { controller, sent, published } = makeBlind();
+    controller.homeKitRaise();
+    controller.homeKitStop();
+    expect(sent).toEqual([16, 0]);
+    expect(published).toEqual(['raising', 'stopped']);
+  });
+
+  it('a processor report of the raise code reports raising without sending anything', () => {
+    const { controller, sent, published } = makeBlind();
+    controller.processorLevel(16);
+    expect(sent).toEqual([]);
+    expect(published).toEqual(['raising']);
+  });
+
+  it('a processor report of the stop code reports stopped', () => {
+    const { controller, published } = makeBlind();
+    controller.processorLevel(35);
+    controller.processorLevel(0);
+    expect(published).toEqual(['lowering', 'stopped']);
+  });
+
+  it('a processor report of an unknown code is ignored', () => {
+    const { controller, published } = makeBlind();
+    controller.processorLevel(50);
+    expect(controller.state.motion).toBe('stopped');
+    expect(published).toEqual([]);
+  });
+
+  it('a processor report matching the current motion publishes nothing', () => {
+    const { controller, published } = makeBlind();
+    controller.homeKitRaise();
+    controller.processorLevel(16);
+    expect(published).toEqual(['raising']);
+  });
+
+  it('motion resets to stopped after the motion timeout without sending a command', () => {
+    vi.useFakeTimers();
+    const { controller, sent, published } = makeBlind({ motionTimeoutMs: 60000 });
+    controller.homeKitLower();
+    vi.advanceTimersByTime(60000);
+    expect(controller.state.motion).toBe('stopped');
+    expect(published).toEqual(['lowering', 'stopped']);
+    expect(sent).toEqual([35]);
+  });
+
+  it('a stop from the processor cancels the motion timeout', () => {
+    vi.useFakeTimers();
+    const { controller, published } = makeBlind({ motionTimeoutMs: 60000 });
+    controller.homeKitLower();
+    controller.processorLevel(0);
+    vi.advanceTimersByTime(120000);
+    expect(published).toEqual(['lowering', 'stopped']);
+  });
+});

@@ -1,3 +1,5 @@
+import { BlindLevels } from './Schemas/device';
+
 /**
  * Device state machines with no HomeKit or socket dependencies. The accessory
  * classes in homeworksAccessory.ts wrap these and translate to HAP characteristics.
@@ -188,6 +190,104 @@ export class ShadeController {
     if (this.settleTimer) {
       clearTimeout(this.settleTimer);
       this.settleTimer = undefined;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- blinds (raise / lower / stop)
+
+export type BlindMotion = 'raising' | 'lowering' | 'stopped';
+
+export interface BlindState {
+  motion: BlindMotion;
+}
+
+export interface BlindOutput {
+  sendLevel(level: number): void;
+  publish(state: BlindState): void;
+}
+
+export interface BlindOptions {
+  /** The processor keeps reporting the last code, so the UI returns to stopped after this long. */
+  motionTimeoutMs?: number;
+}
+
+/**
+ * A relay-driven blind controlled through the dimmer commands with fixed codes:
+ * one level raises, one lowers, one stops. No position is known. The UI is reset
+ * to stopped after a timeout; no command is sent when that happens.
+ */
+export class BlindController {
+  readonly state: BlindState = { motion: 'stopped' };
+  private motionTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly motionTimeoutMs: number;
+
+  constructor(
+    private readonly levels: BlindLevels,
+    private readonly output: BlindOutput,
+    options: BlindOptions = {},
+  ) {
+    this.motionTimeoutMs = options.motionTimeoutMs ?? 60_000;
+  }
+
+  homeKitRaise(): void {
+    this.output.sendLevel(this.levels.raise);
+    this.apply('raising');
+  }
+
+  homeKitLower(): void {
+    this.output.sendLevel(this.levels.lower);
+    this.apply('lowering');
+  }
+
+  homeKitStop(): void {
+    this.output.sendLevel(this.levels.stop);
+    this.apply('stopped');
+  }
+
+  processorLevel(level: number): void {
+    const motion = this.motionFor(level);
+    if (motion) {
+      this.apply(motion);
+    }
+  }
+
+  dispose(): void {
+    this.clearMotionTimer();
+  }
+
+  private motionFor(level: number): BlindMotion | null {
+    if (level === this.levels.raise) {
+      return 'raising';
+    }
+    if (level === this.levels.lower) {
+      return 'lowering';
+    }
+    if (level === this.levels.stop) {
+      return 'stopped';
+    }
+    return null;
+  }
+
+  private apply(motion: BlindMotion): void {
+    this.clearMotionTimer();
+    if (motion !== 'stopped') {
+      this.motionTimer = setTimeout(() => {
+        this.motionTimer = undefined;
+        this.apply('stopped');
+      }, this.motionTimeoutMs);
+    }
+    if (this.state.motion === motion) {
+      return;
+    }
+    this.state.motion = motion;
+    this.output.publish({ ...this.state });
+  }
+
+  private clearMotionTimer(): void {
+    if (this.motionTimer) {
+      clearTimeout(this.motionTimer);
+      this.motionTimer = undefined;
     }
   }
 }

@@ -81,3 +81,30 @@ describe('normalizeConfiguration', () => {
     expect(normalizeConfiguration('x').configuration).toBeNull();
   });
 });
+
+describe('normalizeConfiguration for blinds', () => {
+  it('accepts blind as a device type with the default raise, lower and stop codes', () => {
+    const result = normalizeConfiguration({ host: HOST, devices: [{ name: 'Study', integrationID: '1', deviceType: 'blind' }] });
+    expect(result.configuration?.devices[0]).toEqual({
+      name: 'Study', integrationID: '1', deviceType: 'blind', isDimmable: false, blindLevels: { raise: 16, lower: 35, stop: 0 },
+    });
+  });
+
+  it('accepts custom blind codes, including numeric strings', () => {
+    const device = { name: 'Study', integrationID: '1', deviceType: 'blind', raiseLevel: '20', lowerLevel: 40, stopLevel: 1 };
+    const result = normalizeConfiguration({ host: HOST, devices: [device] });
+    expect(result.configuration?.devices[0].blindLevels).toEqual({ raise: 20, lower: 40, stop: 1 });
+  });
+
+  it('falls back to the default code with a warning when a blind code is invalid', () => {
+    const device = { name: 'Study', integrationID: '1', deviceType: 'blind', raiseLevel: 'up' };
+    const result = normalizeConfiguration({ host: HOST, devices: [device] });
+    expect(result.configuration?.devices[0].blindLevels).toEqual({ raise: 16, lower: 35, stop: 0 });
+    expect(result.warnings.join(' ')).toMatch(/raiseLevel/);
+  });
+
+  it('does not attach blind codes to other device types', () => {
+    const result = normalizeConfiguration({ host: HOST, devices: [{ name: 'A', integrationID: '1', deviceType: 'light', raiseLevel: 5 }] });
+    expect(result.configuration?.devices[0]).not.toHaveProperty('blindLevels');
+  });
+});

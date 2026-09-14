@@ -119,3 +119,59 @@ describe('HomeworksShadeAccessory', () => {
     expect(service.getCharacteristic(Characteristic.TargetPosition).value).toBe(25);
   });
 });
+
+function blind(existing?: Accessory) {
+  const built = build({
+    name: 'Study', integrationID: '01:01:00:03:01', deviceType: 'blind', isDimmable: false,
+    blindLevels: { raise: 16, lower: 35, stop: 0 },
+  }, existing);
+  const sw = (subtype: string) => built.accessory.getServiceById(Service.Switch, subtype)!;
+  return { ...built, raise: sw('raise'), lower: sw('lower'), stop: sw('stop') };
+}
+
+describe('HomeworksBlindAccessory', () => {
+  it('exposes three switches named Raise, Lower and Stop', () => {
+    const { raise, lower, stop } = blind();
+    expect(raise.getCharacteristic(Characteristic.Name).value).toBe('Study Raise');
+    expect(lower.getCharacteristic(Characteristic.Name).value).toBe('Study Lower');
+    expect(stop.getCharacteristic(Characteristic.Name).value).toBe('Study Stop');
+  });
+
+  it('turning the Raise switch on sends the raise code and turning it off sends stop', async () => {
+    const { raise, sent } = blind();
+    await raise.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    await raise.getCharacteristic(Characteristic.On).handleSetRequest(false);
+    expect(sent).toEqual([16, 0]);
+  });
+
+  it('turning the Lower switch on sends the lower code', async () => {
+    const { lower, sent } = blind();
+    await lower.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    expect(sent).toEqual([35]);
+  });
+
+  it('the Stop switch sends the stop code and springs back off', async () => {
+    vi.useFakeTimers();
+    const { stop, sent } = blind();
+    await stop.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    expect(sent).toEqual([0]);
+    vi.advanceTimersByTime(1000);
+    expect(stop.getCharacteristic(Characteristic.On).value).toBe(false);
+  });
+
+  it('a processor report of the lower code turns the Lower switch on and the Raise switch off', () => {
+    const { hwa, raise, lower } = blind();
+    hwa.handleProcessorLevel(16);
+    expect(raise.getCharacteristic(Characteristic.On).value).toBe(true);
+    hwa.handleProcessorLevel(35);
+    expect(raise.getCharacteristic(Characteristic.On).value).toBe(false);
+    expect(lower.getCharacteristic(Characteristic.On).value).toBe(true);
+  });
+
+  it('removes a stale Lightbulb service when a cached accessory becomes a blind', () => {
+    const cached = new Accessory('Study', uuid.generate('01:01:00:03:01'));
+    cached.addService(Service.Lightbulb);
+    const { accessory } = blind(cached);
+    expect(accessory.getService(Service.Lightbulb)).toBeUndefined();
+  });
+});

@@ -1,5 +1,5 @@
 import { Configuration } from './Schemas/configuration';
-import { ConfigDevice, DeviceType } from './Schemas/device';
+import { ConfigDevice, DeviceType, DEFAULT_BLIND_LEVELS } from './Schemas/device';
 
 export interface ConfigurationResult {
   /** Null when a problem makes the plugin unable to run at all. */
@@ -88,16 +88,37 @@ function normalizeDevices(items: unknown[], warnings: string[]): ConfigDevice[] 
     seen.add(integrationID);
 
     let deviceType: DeviceType = 'light';
-    if (entry.deviceType === 'shade' || entry.deviceType === 'light') {
+    if (entry.deviceType === 'shade' || entry.deviceType === 'light' || entry.deviceType === 'blind') {
       deviceType = entry.deviceType;
     } else if (entry.deviceType !== undefined) {
       warnings.push(`${label} ("${name}"): unknown deviceType ${JSON.stringify(entry.deviceType)}, treating it as a light`);
     }
 
-    devices.push({ name, integrationID, deviceType, isDimmable: entry.isDimmable === true });
+    const device: ConfigDevice = { name, integrationID, deviceType, isDimmable: entry.isDimmable === true };
+    if (deviceType === 'blind') {
+      const context = `${label} ("${name}")`;
+      device.blindLevels = {
+        raise: blindLevel(entry.raiseLevel, 'raiseLevel', DEFAULT_BLIND_LEVELS.raise, context, warnings),
+        lower: blindLevel(entry.lowerLevel, 'lowerLevel', DEFAULT_BLIND_LEVELS.lower, context, warnings),
+        stop: blindLevel(entry.stopLevel, 'stopLevel', DEFAULT_BLIND_LEVELS.stop, context, warnings),
+      };
+    }
+    devices.push(device);
   });
 
   return devices;
+}
+
+function blindLevel(value: unknown, key: string, fallback: number, context: string, warnings: string[]): number {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 100) {
+    warnings.push(`${context}: "${key}" must be a whole number between 0 and 100, using ${fallback}`);
+    return fallback;
+  }
+  return parsed;
 }
 
 function idToString(value: unknown): string {
