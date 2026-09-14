@@ -252,7 +252,6 @@ export class HomeworksLightAccessory extends HomeworksAccessory {
  */
 export class HomeworksShadeAccessory extends HomeworksAccessory {
   private _service: Service;
-  public lutronLevelChangeCallback? : SetLutronLevelCallback;
 
   public _shadeState = {
     Position: 0,

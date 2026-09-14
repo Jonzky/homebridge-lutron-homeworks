@@ -8,6 +8,14 @@ src
 
 # eslint
 .eslintrc
+eslint.config.mjs
+
+# tests
+test
+vitest.config.ts
+
+# agent docs
+CLAUDE.md
 
 # typescript
 tsconfig.json

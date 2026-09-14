@@ -1,3 +1,4 @@
+import { Socket } from 'net';
 import { Logger } from 'homebridge';
 
 interface DidReceiveCallback { (engine:NetworkEngine, message: string): void }
@@ -5,41 +6,40 @@ interface DidConnectCallback { (engine:NetworkEngine): void }
 
 
 enum ComState {
-    Boot,
-    Connecting,
-    Authenticating,
-    Connected,
-    Establishing,
-    Ready,
-    Disconnected
+  Boot,
+  Connecting,
+  Authenticating,
+  Connected,
+  Establishing,
+  Ready,
+  Disconnected,
 }
 
 
 
 export class NetworkEngine {
-  private readonly net = require('net');
-  private socket = new this.net.Socket();
+  private socket = new Socket();
   private status: ComState = ComState.Boot;    
   private crlf = '\r\n';
   private watchdogExpiredFlag = false;
-  private pingWatchdogRef;
+  private pingWatchdogRef: ReturnType<typeof setTimeout> | undefined;
     
   private didReceiveCallbacks: DidReceiveCallback[] = [];
   private didConnectCallbacks: DidConnectCallback[] = [];
 
   constructor(
-        public readonly log: Logger,
-        private host: string,
-        private port: number,
-        private username: string,
-        private password: string,
+    public readonly log: Logger,
+    private host: string,
+    private port: number,
+    private username: string,
+    private password: string,
   ) {
       
     this.log.debug('[Network] Instance Ready');
   }
 
   connect() {      
-    this.socket = new this.net.Socket();
+    this.socket = new Socket();
     this.setupBinding();
     this.setupSocketListeners();
       
@@ -67,7 +67,7 @@ export class NetworkEngine {
 
   // Setup Helpers <<<<<<<<<<<<<<<<<<<<<<<<<<<<
   private setupBinding() {
-    this.socket.on('error', (err) => {      
+    this.socket.on('error', (err: Error) => {      
       this.log.error('[Network] Error: ', err);         
     });
 
@@ -83,7 +83,7 @@ export class NetworkEngine {
   }
 
   private setupSocketListeners() {
-    this.socket.on('data', (data) => {      
+    this.socket.on('data', (data: Buffer) => {      
       const stringData = data.toString(); 
       this.watchdogExpiredFlag = false;
       this.padTheDog();                      

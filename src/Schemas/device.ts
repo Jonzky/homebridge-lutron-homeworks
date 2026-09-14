@@ -3,23 +3,23 @@
  */
 export interface ConfigDevice {
 
-    /**
+  /**
      * Gets or sets a unique name for the device that will also be used in the API.
      */
-    name: string;
+  name: string;
 
-    /**
+  /**
      * Gets or sets the integration ID of the light/load/dimmer
      */
-    integrationID: string;
+  integrationID: string;
 
-    /**
+  /**
      * Type of device
      */
-    deviceType: string;
+  deviceType: string;
 
-    /**
+  /**
      * Gets or sets a value that determines whether is dimmable 
      */
-    isDimmable: boolean;    
+  isDimmable: boolean;    
 }

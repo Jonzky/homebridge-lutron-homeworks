@@ -5,8 +5,8 @@ import { HomeworksAccessory } from './homeworksAccessory';
 import { NetworkEngine } from './network';
 
 export class HomeworksPlatform implements DynamicPlatformPlugin {
-  public readonly Service: typeof Service = this.api.hap.Service;
-  public readonly Characteristic: typeof Characteristic = this.api.hap.Characteristic;  
+  public readonly Service: typeof Service;
+  public readonly Characteristic: typeof Characteristic;
   private configuration: Configuration = {devices:[], apiPort:23, host:'127.0.0.1', username:'', password:''};
   private readonly engine: NetworkEngine;
   private readonly cachedPlatformAccessories: PlatformAccessory[] = [];
@@ -17,6 +17,8 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
   ) {
+    this.Service = this.api.hap.Service;
+    this.Characteristic = this.api.hap.Characteristic;
     this.loadUserConfiguration();
 
     this.engine = new NetworkEngine(
@@ -171,7 +173,7 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
         }
 
         this.log.info('[Platform] Registering: %s as %s Dimmable: %s', loadedAccessory.displayName, confDevice.name, isDimmable);
-        // eslint-disable-next-line max-len
+         
         const hwa = HomeworksAccessory.CreateAccessory(this, loadedAccessory, loadedAccessory.UUID, confDevice);
         this.homeworksAccessories.push(hwa);
         hwa.lutronLevelChangeCallback = brightnessChangeCallback;
@@ -191,7 +193,7 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
   }
 
   //Helper function to get the diference in an array
-  diference(a, b) {
+  diference(a: PlatformAccessory[], b: PlatformAccessory[]) {
     const setB = new Set(b);
     return [...new Set(a)].filter(x => !setB.has(x));
   }
