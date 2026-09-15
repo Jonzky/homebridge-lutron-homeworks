@@ -191,3 +191,97 @@ describe('HomeworksBlindAccessory', () => {
     expect(accessory.getService(Service.Lightbulb)).toBeUndefined();
   });
 });
+
+function blindGroup(memberSpecs: Array<{ id: string; raise?: number }>) {
+  const sent: Array<[string, number]> = [];
+  const members = memberSpecs.map(spec => {
+    const built = build({
+      name: 'Blind ' + spec.id, integrationID: spec.id, deviceType: 'blind', isDimmable: false,
+      blindLevels: { raise: spec.raise ?? 16, lower: 35, stop: 0 },
+    });
+    built.hwa.onSendLevel = (level, id) => sent.push([id, level]);
+    return built.hwa;
+  });
+  const device = {
+    name: 'All blinds', integrationID: 'all', deviceType: 'blindGroup', isDimmable: false, groupMemberIds: memberSpecs.map(m => m.id),
+  };
+  const accessory = new Accessory('All blinds', uuid.generate('all'));
+  (accessory as unknown as { context: unknown }).context = { device };
+  const host = { Service, Characteristic, log: silentLogger() };
+  const hwa = HomeworksAccessory.CreateAccessory(
+    host as unknown as Parameters<typeof HomeworksAccessory.CreateAccessory>[0],
+    accessory as unknown as Parameters<typeof HomeworksAccessory.CreateAccessory>[1],
+    accessory.UUID,
+    device as unknown as Parameters<typeof HomeworksAccessory.CreateAccessory>[3],
+    members as unknown as Parameters<typeof HomeworksAccessory.CreateAccessory>[4],
+  );
+  hwa.onSendLevel = (level, id) => sent.push([id, level]);
+  const sw = (subtype: string) => accessory.getServiceById(Service.Switch, subtype)!;
+  return { hwa, members, sent, raise: sw('raise'), lower: sw('lower'), stop: sw('stop') };
+}
+
+describe('HomeworksBlindGroupAccessory', () => {
+  it('exposes Raise, Lower and Stop switches labelled through ConfiguredName', () => {
+    const { raise, lower, stop } = blindGroup([{ id: '1' }]);
+    expect(raise.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Raise');
+    expect(lower.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Lower');
+    expect(stop.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Stop');
+  });
+
+  it('has no processor address to poll', () => {
+    const { hwa } = blindGroup([{ id: '1' }]);
+    expect(hwa.hasProcessorAddress()).toBe(false);
+  });
+
+  it('raise fans out each member\'s own raise code, one member per stagger interval', async () => {
+    vi.useFakeTimers();
+    const { raise, sent } = blindGroup([{ id: '1' }, { id: '2', raise: 20 }]);
+    await raise.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    expect(sent).toEqual([['1', 16]]);
+    vi.advanceTimersByTime(100);
+    expect(sent).toEqual([['1', 16], ['2', 20]]);
+  });
+
+  it('lower fans out the lower code', async () => {
+    vi.useFakeTimers();
+    const { lower, sent } = blindGroup([{ id: '1' }, { id: '2' }]);
+    await lower.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    vi.advanceTimersByTime(100);
+    expect(sent).toEqual([['1', 35], ['2', 35]]);
+  });
+
+  it('stop cancels a pending fan-out and stops every member', async () => {
+    vi.useFakeTimers();
+    const { raise, stop, sent } = blindGroup([{ id: '1' }, { id: '2' }]);
+    await raise.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    await stop.getCharacteristic(Characteristic.On).handleSetRequest(true);
+    vi.advanceTimersByTime(500);
+    expect(sent).toEqual([['1', 16], ['1', 0], ['2', 0]]);
+  });
+
+  it('the group Raise switch is on only while every member reports raising', () => {
+    const { members, raise } = blindGroup([{ id: '1' }, { id: '2' }]);
+    members[0].handleProcessorLevel(16);
+    expect(raise.getCharacteristic(Characteristic.On).value).toBe(false);
+    members[1].handleProcessorLevel(16);
+    expect(raise.getCharacteristic(Characteristic.On).value).toBe(true);
+    members[0].handleProcessorLevel(0);
+    expect(raise.getCharacteristic(Characteristic.On).value).toBe(false);
+  });
+
+  it('switching the group Raise switch off stops all members when they are raising', async () => {
+    vi.useFakeTimers();
+    const { members, raise, sent } = blindGroup([{ id: '1' }, { id: '2' }]);
+    members[0].handleProcessorLevel(16);
+    members[1].handleProcessorLevel(16);
+    await raise.getCharacteristic(Characteristic.On).handleSetRequest(false);
+    vi.advanceTimersByTime(100);
+    expect(sent).toEqual([['1', 0], ['2', 0]]);
+  });
+
+  it('switching the group Raise switch off does nothing when members are not raising', async () => {
+    const { raise, sent } = blindGroup([{ id: '1' }]);
+    await raise.getCharacteristic(Characteristic.On).handleSetRequest(false);
+    expect(sent).toEqual([]);
+  });
+});

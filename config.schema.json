@@ -48,7 +48,7 @@
               "title": "Integration ID",
               "required": true,
               "placeholder": "01:01:00:01:04",
-              "description": "Processor address exactly as reported in DL lines, brackets removed. Changing it re-creates the HomeKit accessory."
+              "description": "Processor address exactly as reported in DL lines, brackets removed. For a blind group, any unique label; it is not sent to the processor. Changing it re-creates the HomeKit accessory."
             },
             "deviceType": {
               "type": "string",
@@ -58,7 +58,8 @@
               "oneOf": [
                 { "title": "Light", "enum": ["light"] },
                 { "title": "Shade (level is the position)", "enum": ["shade"] },
-                { "title": "Blind (raise / lower / stop buttons)", "enum": ["blind"] }
+                { "title": "Blind (raise / lower / stop buttons)", "enum": ["blind"] },
+                { "title": "Blind group (raise / lower / stop for several blinds)", "enum": ["blindGroup"] }
               ]
             },
             "isDimmable": {
@@ -90,6 +91,24 @@
               "description": "Blinds only. Dimmer level that makes the blind go down.",
               "condition": {
                 "functionBody": "return model.devices[arrayIndices].deviceType === 'blind';"
+              }
+            },
+            "members": {
+              "type": "array",
+              "title": "Member blinds",
+              "description": "Blind groups only. Names or integration IDs of the blinds to control together. Leave empty to include every blind.",
+              "items": { "type": "string" },
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].deviceType === 'blindGroup';"
+              }
+            },
+            "exclude": {
+              "type": "array",
+              "title": "Excluded blinds",
+              "description": "Blind groups only. Names or integration IDs of blinds to leave out of the group.",
+              "items": { "type": "string" },
+              "condition": {
+                "functionBody": "return model.devices[arrayIndices].deviceType === 'blindGroup';"
               }
             },
             "stopLevel": {

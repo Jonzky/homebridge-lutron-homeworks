@@ -58,9 +58,17 @@ export function normalizeConfiguration(raw: unknown): ConfigurationResult {
   return { configuration: { host, apiPort, username, password, devices }, problems, warnings };
 }
 
+interface PendingGroup {
+  device: ConfigDevice;
+  label: string;
+  members?: string[];
+  exclude?: string[];
+}
+
 function normalizeDevices(items: unknown[], warnings: string[]): ConfigDevice[] {
   const seen = new Set<string>();
   const devices: ConfigDevice[] = [];
+  const pendingGroups: PendingGroup[] = [];
 
   items.forEach((item, index) => {
     const label = `devices[${index}]`;
@@ -88,7 +96,7 @@ function normalizeDevices(items: unknown[], warnings: string[]): ConfigDevice[] 
     seen.add(integrationID);
 
     let deviceType: DeviceType = 'light';
-    if (entry.deviceType === 'shade' || entry.deviceType === 'light' || entry.deviceType === 'blind') {
+    if (entry.deviceType === 'shade' || entry.deviceType === 'light' || entry.deviceType === 'blind' || entry.deviceType === 'blindGroup') {
       deviceType = entry.deviceType;
     } else if (entry.deviceType !== undefined) {
       warnings.push(`${label} ("${name}"): unknown deviceType ${JSON.stringify(entry.deviceType)}, treating it as a light`);
@@ -103,10 +111,72 @@ function normalizeDevices(items: unknown[], warnings: string[]): ConfigDevice[] 
         stop: blindLevel(entry.stopLevel, 'stopLevel', DEFAULT_BLIND_LEVELS.stop, context, warnings),
       };
     }
+    if (deviceType === 'blindGroup') {
+      const context = `${label} ("${name}")`;
+      pendingGroups.push({
+        device,
+        label: context,
+        members: stringList(entry.members, 'members', context, warnings),
+        exclude: stringList(entry.exclude, 'exclude', context, warnings),
+      });
+    }
     devices.push(device);
   });
 
+  // Groups are resolved after every device is known, so a group may be listed before its members.
+  for (const group of pendingGroups) {
+    group.device.groupMemberIds = resolveGroupMembers(group, devices, warnings);
+    if (group.device.groupMemberIds.length === 0) {
+      warnings.push(`${group.label} ignored: it has no member blinds`);
+      devices.splice(devices.indexOf(group.device), 1);
+    }
+  }
+
   return devices;
+}
+
+/** Members and exclusions may name a blind by integrationID or by name. */
+function resolveGroupMembers(group: PendingGroup, devices: ConfigDevice[], warnings: string[]): string[] {
+  const blinds = devices.filter(d => d.deviceType === 'blind');
+  const findDevice = (ref: string) => devices.find(d => d.integrationID === ref || d.name === ref);
+
+  let members: ConfigDevice[];
+  if (group.members) {
+    members = [];
+    for (const ref of group.members) {
+      const found = findDevice(ref);
+      if (!found) {
+        warnings.push(`${group.label}: member "${ref}" does not match any device`);
+      } else if (found.deviceType !== 'blind') {
+        warnings.push(`${group.label}: member "${ref}" is a ${found.deviceType}, not a blind`);
+      } else if (!members.includes(found)) {
+        members.push(found);
+      }
+    }
+  } else {
+    members = [...blinds];
+  }
+
+  for (const ref of group.exclude ?? []) {
+    const found = findDevice(ref);
+    if (!found) {
+      warnings.push(`${group.label}: exclusion "${ref}" does not match any device`);
+    }
+    members = members.filter(m => m !== found);
+  }
+
+  return members.map(m => m.integrationID);
+}
+
+function stringList(value: unknown, key: string, context: string, warnings: string[]): string[] | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    warnings.push(`${context}: "${key}" must be a list of names or integration IDs, ignoring it`);
+    return undefined;
+  }
+  return value.map(item => idToString(item)).filter(item => item !== '');
 }
 
 function blindLevel(value: unknown, key: string, fallback: number, context: string, warnings: string[]): number {

@@ -108,3 +108,53 @@ describe('normalizeConfiguration for blinds', () => {
     expect(result.configuration?.devices[0]).not.toHaveProperty('blindLevels');
   });
 });
+
+describe('normalizeConfiguration for blind groups', () => {
+  const blinds = [
+    { name: 'Lounge', integrationID: '1', deviceType: 'blind' },
+    { name: 'Study', integrationID: '2', deviceType: 'blind', raiseLevel: 20 },
+    { name: 'Broken', integrationID: '3', deviceType: 'blind' },
+    { name: 'Kitchen', integrationID: '4', deviceType: 'light' },
+  ];
+  const group = (extra: Record<string, unknown> = {}) =>
+    ({ name: 'All blinds', integrationID: 'all', deviceType: 'blindGroup', ...extra });
+  const groupOf = (devices: unknown[]) => {
+    const result = normalizeConfiguration({ host: HOST, devices });
+    return { result, group: result.configuration?.devices.find(d => d.deviceType === 'blindGroup') };
+  };
+
+  it('defaults a group to every blind in the config', () => {
+    const { group: g } = groupOf([...blinds, group()]);
+    expect(g).toEqual({
+      name: 'All blinds', integrationID: 'all', deviceType: 'blindGroup', isDimmable: false, groupMemberIds: ['1', '2', '3'],
+    });
+  });
+
+  it('excludes blinds listed by name or id', () => {
+    const { group: g } = groupOf([...blinds, group({ exclude: ['Broken', '1'] })]);
+    expect(g?.groupMemberIds).toEqual(['2']);
+  });
+
+  it('resolves an explicit members list by name or id in the order given', () => {
+    const { group: g } = groupOf([...blinds, group({ members: ['Study', '1'] })]);
+    expect(g?.groupMemberIds).toEqual(['2', '1']);
+  });
+
+  it('skips unknown or non-blind members with a warning', () => {
+    const { result, group: g } = groupOf([...blinds, group({ members: ['Kitchen', 'Nope', '1'] })]);
+    expect(g?.groupMemberIds).toEqual(['1']);
+    expect(result.warnings.join(' ')).toMatch(/Kitchen/);
+    expect(result.warnings.join(' ')).toMatch(/Nope/);
+  });
+
+  it('skips a group that ends up with no members', () => {
+    const { result, group: g } = groupOf([...blinds, group({ members: ['Nope'] })]);
+    expect(g).toBeUndefined();
+    expect(result.warnings.join(' ')).toMatch(/All blinds/);
+  });
+
+  it('lets a group be listed before its members', () => {
+    const { group: g } = groupOf([group(), ...blinds]);
+    expect(g?.groupMemberIds).toEqual(['1', '2', '3']);
+  });
+});

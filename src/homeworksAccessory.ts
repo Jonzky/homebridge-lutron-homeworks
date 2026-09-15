@@ -1,7 +1,7 @@
 import { Service, PlatformAccessory, Characteristic, WithUUID } from 'homebridge';
 import { ConfigDevice, DEFAULT_BLIND_LEVELS } from './Schemas/device';
 import { EngineLogger } from './network';
-import { LightController, ShadeController, ShadeMotion, BlindController } from './controllers';
+import { LightController, ShadeController, ShadeMotion, BlindController, BlindMotion } from './controllers';
 
 /** Momentary switches spring back to off after this long. */
 const MOMENTARY_RESET_MS = 1000;
@@ -13,7 +13,7 @@ export interface AccessoryHost {
   readonly log: EngineLogger;
 }
 
-export type SendLevelCallback = (level: number, accessory: HomeworksAccessory) => void;
+export type SendLevelCallback = (level: number, integrationId: string) => void;
 
 /**
  * One HomeKit accessory bound to one processor load. Subclasses translate
@@ -25,12 +25,15 @@ export abstract class HomeworksAccessory {
     accessory: PlatformAccessory,
     uuid: string,
     config: ConfigDevice,
+    members: HomeworksBlindAccessory[] = [],
   ): HomeworksAccessory {
     switch (config.deviceType) {
       case 'shade':
         return new HomeworksShadeAccessory(host, accessory, uuid, config);
       case 'blind':
         return new HomeworksBlindAccessory(host, accessory, uuid, config);
+      case 'blindGroup':
+        return new HomeworksBlindGroupAccessory(host, accessory, uuid, config, members);
       case 'light':
       default:
         return new HomeworksLightAccessory(host, accessory, uuid, config);
@@ -67,6 +70,11 @@ export abstract class HomeworksAccessory {
   /** Level the processor reported for this load, from a DL line or an RDL reply. */
   public abstract handleProcessorLevel(level: number): void;
 
+  /** False for virtual accessories (groups) whose integrationID is not a processor address. */
+  public hasProcessorAddress(): boolean {
+    return true;
+  }
+
   /**
    * Removes services of the other device types, so an accessory whose deviceType
    * changed in the config does not keep showing its old controls from the cache.
@@ -85,7 +93,7 @@ export abstract class HomeworksAccessory {
 
   protected sendLevel(level: number): void {
     if (this.onSendLevel) {
-      this.onSendLevel(level, this);
+      this.onSendLevel(level, this.getIntegrationId());
     } else {
       this.host.log.warn('[Accessory][%s] No send callback registered, dropping level %d', this.getName(), level);
     }
@@ -195,16 +203,14 @@ export class HomeworksShadeAccessory extends HomeworksAccessory {
 }
 
 /**
- * A relay-driven blind with no position feedback, exposed as three switches named
- * Raise, Lower and Stop inside one accessory:
- * Raise and Lower stay on while the processor reports the matching code and
- * send the stop code when switched off; Stop is momentary.
+ * Shared shape for anything driven by raise / lower / stop: three Switch services
+ * inside one accessory. Raise and Lower show the current motion and send stop when
+ * switched off; Stop is momentary.
  */
-export class HomeworksBlindAccessory extends HomeworksAccessory {
-  private readonly raise: Service;
-  private readonly lower: Service;
-  private readonly stop: Service;
-  private readonly controller: BlindController;
+abstract class RaiseLowerStopAccessory extends HomeworksAccessory {
+  protected readonly raiseSwitch: Service;
+  protected readonly lowerSwitch: Service;
+  protected readonly stopSwitch: Service;
   private stopResetTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(host: AccessoryHost, accessory: PlatformAccessory, uuid: string, config: ConfigDevice) {
@@ -212,50 +218,51 @@ export class HomeworksBlindAccessory extends HomeworksAccessory {
     const { Service, Characteristic } = host;
 
     this.pruneServices([Service.Switch]);
-    this.raise = this.switchService('raise', 'Raise');
-    this.lower = this.switchService('lower', 'Lower');
-    this.stop = this.switchService('stop', 'Stop');
+    this.raiseSwitch = this.switchService('raise', 'Raise');
+    this.lowerSwitch = this.switchService('lower', 'Lower');
+    this.stopSwitch = this.switchService('stop', 'Stop');
 
-    this.controller = new BlindController(config.blindLevels ?? DEFAULT_BLIND_LEVELS, {
-      sendLevel: level => this.sendLevel(level),
-      publish: state => {
-        this.raise.updateCharacteristic(Characteristic.On, state.motion === 'raising');
-        this.lower.updateCharacteristic(Characteristic.On, state.motion === 'lowering');
-      },
-    });
-
-    this.raise.getCharacteristic(Characteristic.On)
-      .onGet(() => this.controller.state.motion === 'raising')
+    this.raiseSwitch.getCharacteristic(Characteristic.On)
+      .onGet(() => this.currentMotion() === 'raising')
       .onSet(value => {
         if (value) {
-          this.controller.homeKitRaise();
-        } else if (this.controller.state.motion === 'raising') {
-          this.controller.homeKitStop();
+          this.doRaise();
+        } else if (this.currentMotion() === 'raising') {
+          this.doStop();
         }
       });
 
-    this.lower.getCharacteristic(Characteristic.On)
-      .onGet(() => this.controller.state.motion === 'lowering')
+    this.lowerSwitch.getCharacteristic(Characteristic.On)
+      .onGet(() => this.currentMotion() === 'lowering')
       .onSet(value => {
         if (value) {
-          this.controller.homeKitLower();
-        } else if (this.controller.state.motion === 'lowering') {
-          this.controller.homeKitStop();
+          this.doLower();
+        } else if (this.currentMotion() === 'lowering') {
+          this.doStop();
         }
       });
 
-    this.stop.getCharacteristic(Characteristic.On)
+    this.stopSwitch.getCharacteristic(Characteristic.On)
       .onGet(() => false)
       .onSet(value => {
         if (value) {
-          this.controller.homeKitStop();
+          this.doStop();
           this.springBackStop();
         }
       });
   }
 
-  public handleProcessorLevel(level: number): void {
-    this.controller.processorLevel(level);
+  protected abstract currentMotion(): BlindMotion;
+  protected abstract doRaise(): void;
+  protected abstract doLower(): void;
+  protected abstract doStop(): void;
+
+  /** Push the current motion to the Raise and Lower switches. */
+  protected refreshSwitches(): void {
+    const { On } = this.host.Characteristic;
+    const motion = this.currentMotion();
+    this.raiseSwitch.updateCharacteristic(On, motion === 'raising');
+    this.lowerSwitch.updateCharacteristic(On, motion === 'lowering');
   }
 
   private switchService(subtype: string, name: string): Service {
@@ -278,7 +285,136 @@ export class HomeworksBlindAccessory extends HomeworksAccessory {
     }
     this.stopResetTimer = setTimeout(() => {
       this.stopResetTimer = undefined;
-      this.stop.updateCharacteristic(this.host.Characteristic.On, false);
+      this.stopSwitch.updateCharacteristic(this.host.Characteristic.On, false);
     }, MOMENTARY_RESET_MS);
+  }
+}
+
+/**
+ * A relay-driven blind with no position feedback: the dimmer level is a command
+ * code (raise / lower / stop), not a position.
+ */
+export class HomeworksBlindAccessory extends RaiseLowerStopAccessory {
+  private readonly controller: BlindController;
+  private readonly motionListeners: Array<() => void> = [];
+
+  constructor(host: AccessoryHost, accessory: PlatformAccessory, uuid: string, config: ConfigDevice) {
+    super(host, accessory, uuid, config);
+    this.controller = new BlindController(config.blindLevels ?? DEFAULT_BLIND_LEVELS, {
+      sendLevel: level => this.sendLevel(level),
+      publish: () => {
+        this.refreshSwitches();
+        for (const listener of this.motionListeners) {
+          listener();
+        }
+      },
+    });
+  }
+
+  public handleProcessorLevel(level: number): void {
+    this.controller.processorLevel(level);
+  }
+
+  public get motion(): BlindMotion {
+    return this.controller.state.motion;
+  }
+
+  /** Called whenever the motion changes, from HomeKit or from the processor. Used by groups. */
+  public onMotionChange(listener: () => void): void {
+    this.motionListeners.push(listener);
+  }
+
+  public raise(): void {
+    this.controller.homeKitRaise();
+  }
+
+  public lower(): void {
+    this.controller.homeKitLower();
+  }
+
+  public stop(): void {
+    this.controller.homeKitStop();
+  }
+
+  protected currentMotion(): BlindMotion {
+    return this.motion;
+  }
+
+  protected doRaise(): void {
+    this.raise();
+  }
+
+  protected doLower(): void {
+    this.lower();
+  }
+
+  protected doStop(): void {
+    this.stop();
+  }
+}
+
+/** Interval between commands to consecutive members, so the processor is not flooded. */
+const GROUP_STAGGER_MS = 100;
+
+/**
+ * A virtual accessory whose Raise / Lower / Stop fan out to several blinds. Its
+ * switches show a motion only while every member reports it. Its integrationID
+ * is a stable label for HomeKit, never sent to the processor.
+ */
+export class HomeworksBlindGroupAccessory extends RaiseLowerStopAccessory {
+  private readonly members: HomeworksBlindAccessory[];
+  private pending: Array<ReturnType<typeof setTimeout>> = [];
+
+  constructor(host: AccessoryHost, accessory: PlatformAccessory, uuid: string, config: ConfigDevice, members: HomeworksBlindAccessory[]) {
+    super(host, accessory, uuid, config);
+    this.members = members;
+    for (const member of members) {
+      member.onMotionChange(() => this.refreshSwitches());
+    }
+    if (members.length === 0) {
+      host.log.warn('[Accessory][%s] Blind group has no members', config.name);
+    }
+  }
+
+  public hasProcessorAddress(): boolean {
+    return false;
+  }
+
+  public handleProcessorLevel(): void {
+    // A group has no processor address; nothing can be reported for it.
+  }
+
+  protected currentMotion(): BlindMotion {
+    if (this.members.length === 0) {
+      return 'stopped';
+    }
+    const first = this.members[0].motion;
+    return this.members.every(member => member.motion === first) ? first : 'stopped';
+  }
+
+  protected doRaise(): void {
+    this.fanOut(member => member.raise());
+  }
+
+  protected doLower(): void {
+    this.fanOut(member => member.lower());
+  }
+
+  protected doStop(): void {
+    this.fanOut(member => member.stop());
+  }
+
+  private fanOut(action: (member: HomeworksBlindAccessory) => void): void {
+    for (const timer of this.pending) {
+      clearTimeout(timer);
+    }
+    this.pending = [];
+    this.members.forEach((member, index) => {
+      if (index === 0) {
+        action(member);
+      } else {
+        this.pending.push(setTimeout(() => action(member), index * GROUP_STAGGER_MS));
+      }
+    });
   }
 }

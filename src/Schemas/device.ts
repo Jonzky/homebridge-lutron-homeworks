@@ -1,4 +1,4 @@
-export type DeviceType = 'light' | 'shade' | 'blind';
+export type DeviceType = 'light' | 'shade' | 'blind' | 'blindGroup';
 
 /** Dimmer levels a relay-driven blind interprets as commands. */
 export interface BlindLevels {
@@ -31,4 +31,7 @@ export interface ConfigDevice {
 
   /** Blinds only. */
   blindLevels?: BlindLevels;
+
+  /** Blind groups only: integration IDs of the member blinds, resolved and in order. */
+  groupMemberIds?: string[];
 }

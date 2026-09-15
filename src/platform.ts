@@ -2,7 +2,7 @@ import { API, DynamicPlatformPlugin, Logger, PlatformAccessory, PlatformConfig, 
 import { Configuration } from './Schemas/configuration';
 import { ConfigDevice } from './Schemas/device';
 import { PLATFORM_NAME, PLUGIN_NAME } from './settings';
-import { HomeworksAccessory } from './homeworksAccessory';
+import { HomeworksAccessory, HomeworksBlindAccessory } from './homeworksAccessory';
 import { NetworkEngine } from './network';
 import { normalizeConfiguration } from './config';
 import { parseDlLine, fadeDimCommand, requestLevelCommand } from './protocol';
@@ -89,6 +89,9 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
     this.clearLevelRequests();
     let index = 0;
     for (const accessory of this.homeworksAccessories.values()) {
+      if (!accessory.hasProcessorAddress()) {
+        continue;
+      }
       const timer = setTimeout(() => {
         this.engine?.send(requestLevelCommand(accessory.getIntegrationId()));
       }, index * LEVEL_REQUEST_INTERVAL_MS);
@@ -109,37 +112,25 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
   /**
    * Adds, updates or removes HomeKit accessories to match the config. Runs once
    * per Homebridge start; the accessory UUID is derived from the integration ID.
+   * Groups are attached after the loads they contain.
    */
   private discoverDevices(devices: ConfigDevice[]): void {
-    const sendLevel = (value: number, accessory: HomeworksAccessory): void => {
-      this.log.debug('[Platform] %s -> %d', accessory.getName(), value);
-      this.engine?.send(fadeDimCommand(value, accessory.getIntegrationId()));
-    };
-
     const kept: PlatformAccessory[] = [];
 
-    for (const device of devices) {
-      const uuid = this.api.hap.uuid.generate(device.integrationID);
-      let accessory = this.cachedPlatformAccessories.find(cached => cached.UUID === uuid);
-
-      if (accessory) {
-        this.log.debug('[Platform] Updating %s', device.name);
-        accessory.context.device = device;
-        accessory.displayName = device.name;
-        this.api.updatePlatformAccessories([accessory]);
-      } else {
-        this.log.info('[Platform] Adding %s', device.name);
-        accessory = new this.api.platformAccessory(device.name, uuid);
-        accessory.context.device = device;
-        this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    for (const device of devices.filter(d => d.deviceType !== 'blindGroup')) {
+      kept.push(this.attachDevice(device, []));
+    }
+    for (const device of devices.filter(d => d.deviceType === 'blindGroup')) {
+      const members: HomeworksBlindAccessory[] = [];
+      for (const memberId of device.groupMemberIds ?? []) {
+        const member = this.homeworksAccessories.get(this.api.hap.uuid.generate(memberId));
+        if (member instanceof HomeworksBlindAccessory) {
+          members.push(member);
+        } else {
+          this.log.warn('[Platform] Group %s: member %s is not a configured blind', device.name, memberId);
+        }
       }
-
-      this.log.info('[Platform] Registering %s (%s, id %s%s)',
-        device.name, device.deviceType, device.integrationID, device.isDimmable ? ', dimmable' : '');
-      const homeworksAccessory = HomeworksAccessory.CreateAccessory(this, accessory, uuid, device);
-      homeworksAccessory.onSendLevel = sendLevel;
-      this.homeworksAccessories.set(uuid, homeworksAccessory);
-      kept.push(accessory);
+      kept.push(this.attachDevice(device, members));
     }
 
     const stale = this.cachedPlatformAccessories.filter(cached => !kept.includes(cached));
@@ -147,5 +138,35 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
       this.log.warn('[Platform] Removing %d accessories that are no longer in the config', stale.length);
       this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, stale);
     }
+  }
+
+  private attachDevice(device: ConfigDevice, members: HomeworksBlindAccessory[]): PlatformAccessory {
+    const uuid = this.api.hap.uuid.generate(device.integrationID);
+    let accessory = this.cachedPlatformAccessories.find(cached => cached.UUID === uuid);
+
+    if (accessory) {
+      this.log.debug('[Platform] Updating %s', device.name);
+      accessory.context.device = device;
+      accessory.displayName = device.name;
+      this.api.updatePlatformAccessories([accessory]);
+    } else {
+      this.log.info('[Platform] Adding %s', device.name);
+      accessory = new this.api.platformAccessory(device.name, uuid);
+      accessory.context.device = device;
+      this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+    }
+
+    const detail = device.deviceType === 'blindGroup'
+      ? `${members.length} members`
+      : `id ${device.integrationID}${device.isDimmable ? ', dimmable' : ''}`;
+    this.log.info('[Platform] Registering %s (%s, %s)', device.name, device.deviceType, detail);
+
+    const homeworksAccessory = HomeworksAccessory.CreateAccessory(this, accessory, uuid, device, members);
+    homeworksAccessory.onSendLevel = (level, integrationId) => {
+      this.log.debug('[Platform] %s -> %d', integrationId, level);
+      this.engine?.send(fadeDimCommand(level, integrationId));
+    };
+    this.homeworksAccessories.set(uuid, homeworksAccessory);
+    return accessory;
   }
 }
