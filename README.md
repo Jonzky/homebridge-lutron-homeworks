@@ -7,7 +7,7 @@ Requires Node.js 20 or newer and Homebridge 1.8 or newer, including Homebridge 2
 ## What it does
 
 - Lights (on/off, optionally dimmable) and shades driven as dimmer levels.
-- Relay-driven blinds that only understand raise, lower and stop.
+- Relay-driven blinds that only understand raise, lower and stop, and groups that drive several of them together.
 - Live state: the plugin enables dimmer level monitoring on the processor, so changes made from keypads or other apps show up in HomeKit.
 - A resilient connection: line-based parsing of the telnet stream, keepalive with dead-peer detection, reconnect with backoff, and commands queued while reconnecting.
 
@@ -26,7 +26,8 @@ Add a platform block to `config.json`, or use the Homebridge UI. The `platform` 
     { "name": "Kitchen", "integrationID": "01:01:00:01:04", "deviceType": "light", "isDimmable": true },
     { "name": "Hall", "integrationID": "01:01:00:01:05", "deviceType": "light" },
     { "name": "Study shade", "integrationID": "01:01:00:02:01", "deviceType": "shade" },
-    { "name": "Lounge blind", "integrationID": "01:01:00:03:01", "deviceType": "blind" }
+    { "name": "Lounge blind", "integrationID": "01:01:00:03:01", "deviceType": "blind" },
+    { "name": "All blinds", "integrationID": "all-blinds", "deviceType": "blindGroup", "exclude": ["Broken blind"] }
   ]
 }
 ```
@@ -38,16 +39,19 @@ Add a platform block to `config.json`, or use the Homebridge UI. The `platform` 
 | `username` | Sent at the processor's `LOGIN:` prompt. On Illumination-era processors this is the whole login string. |
 | `password` | Only sent if the processor issues a separate `PASSWORD:` prompt. Leave empty otherwise. |
 | `devices[].name` | HomeKit name. |
-| `devices[].integrationID` | The address the processor reports in `DL` lines, without the brackets. The HomeKit accessory identity is derived from it, so changing it re-creates the accessory. |
-| `devices[].deviceType` | `light` (default), `shade` or `blind`. |
+| `devices[].integrationID` | The address the processor reports in `DL` lines, without the brackets. For a blind group, any unique label; it is never sent to the processor. The HomeKit accessory identity is derived from it, so changing it re-creates the accessory. |
+| `devices[].deviceType` | `light` (default), `shade`, `blind` or `blindGroup`. |
 | `devices[].isDimmable` | Lights only. Omitted means not dimmable. |
 | `devices[].raiseLevel`, `lowerLevel`, `stopLevel` | Blinds only. Defaults 16, 35 and 0. |
+| `devices[].members` | Blind groups only. Names or integration IDs of the blinds in the group. Omit to include every blind. |
+| `devices[].exclude` | Blind groups only. Names or integration IDs to leave out. |
 
 ### Device types
 
 - **light**: a Lightbulb. Turning a dimmable light on restores its last level rather than jumping to 100%.
 - **shade**: a Window Covering whose position is the dimmer level. Position state follows the processor's confirmation.
 - **blind**: a blind whose motor is driven by relays, where the dimmer level is a command code rather than a position. HomeKit shows one accessory with three switches labelled Raise, Lower and Stop (use "Show as separate tiles" in the Home app's accessory settings if you prefer three tiles). Raise and Lower stay on while the processor reports the matching code and send the stop code when switched off; Stop is momentary. Renaming a switch in the Home app sticks. Because the processor keeps reporting the last code, the switches turn off on their own after a minute.
+- **blindGroup**: one accessory with the same Raise, Lower and Stop switches that drives several blinds. Membership is every blind in the config unless `members` lists specific ones; `exclude` removes blinds from either. Commands go out one blind at a time, a tenth of a second apart, using each blind's own codes. The group's Raise or Lower switch shows on only while every member reports that motion.
 
 Devices with a missing name or integration ID, or with a duplicate integration ID, are skipped with a warning in the Homebridge log. A missing host or an invalid port is logged as an error and the plugin stays inactive.
 
