@@ -158,3 +158,30 @@ describe('normalizeConfiguration for blind groups', () => {
     expect(g?.groupMemberIds).toEqual(['1', '2', '3']);
   });
 });
+
+describe('normalizeConfiguration blind group include', () => {
+  const blinds = [
+    { name: 'Lounge', integrationID: '1', deviceType: 'blind' },
+    { name: 'Study', integrationID: '2', deviceType: 'blind' },
+    { name: 'Hall', integrationID: '3', deviceType: 'blind' },
+  ];
+  const groupOf = (extra: Record<string, unknown>) => {
+    const group = { name: 'Some', integrationID: 'g', deviceType: 'blindGroup', ...extra };
+    const result = normalizeConfiguration({ host: HOST, devices: [...blinds, group] });
+    return { result, group: result.configuration?.devices.find(d => d.deviceType === 'blindGroup') };
+  };
+
+  it('include selects only the listed blinds, by name or id, in the order given', () => {
+    expect(groupOf({ include: ['Study', '1'] }).group?.groupMemberIds).toEqual(['2', '1']);
+  });
+
+  it('exclude applies on top of include', () => {
+    expect(groupOf({ include: ['Study', '1'], exclude: ['1'] }).group?.groupMemberIds).toEqual(['2']);
+  });
+
+  it('include wins over the members alias when both are given, with a warning', () => {
+    const { result, group } = groupOf({ include: ['Study'], members: ['Hall'] });
+    expect(group?.groupMemberIds).toEqual(['2']);
+    expect(result.warnings.join(' ')).toMatch(/members/);
+  });
+});

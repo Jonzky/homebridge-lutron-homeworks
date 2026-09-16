@@ -144,11 +144,10 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
     const uuid = this.api.hap.uuid.generate(device.integrationID);
     let accessory = this.cachedPlatformAccessories.find(cached => cached.UUID === uuid);
 
+    const restored = accessory !== undefined;
     if (accessory) {
       this.log.debug('[Platform] Updating %s', device.name);
       accessory.context.device = device;
-      accessory.displayName = device.name;
-      this.api.updatePlatformAccessories([accessory]);
     } else {
       this.log.info('[Platform] Adding %s', device.name);
       accessory = new this.api.platformAccessory(device.name, uuid);
@@ -167,6 +166,16 @@ export class HomeworksPlatform implements DynamicPlatformPlugin {
       this.engine?.send(fadeDimCommand(level, integrationId));
     };
     this.homeworksAccessories.set(uuid, homeworksAccessory);
+
+    // A rename made in the Home app lands in ConfiguredName; show it in Homebridge too.
+    const homeKitName = homeworksAccessory.getHomeKitRename();
+    if (homeKitName) {
+      this.log.info('[Platform] %s is named "%s" in HomeKit; using that name here', device.name, homeKitName);
+    }
+    accessory.displayName = homeKitName ?? device.name;
+    if (restored) {
+      this.api.updatePlatformAccessories([accessory]);
+    }
     return accessory;
   }
 }

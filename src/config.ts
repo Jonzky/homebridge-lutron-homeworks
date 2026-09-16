@@ -113,10 +113,15 @@ function normalizeDevices(items: unknown[], warnings: string[]): ConfigDevice[] 
     }
     if (deviceType === 'blindGroup') {
       const context = `${label} ("${name}")`;
+      const include = stringList(entry.include, 'include', context, warnings);
+      const members = stringList(entry.members, 'members', context, warnings);
+      if (include && members) {
+        warnings.push(`${context}: both "include" and "members" given; using "include" ("members" is an alias)`);
+      }
       pendingGroups.push({
         device,
         label: context,
-        members: stringList(entry.members, 'members', context, warnings),
+        members: include ?? members,
         exclude: stringList(entry.exclude, 'exclude', context, warnings),
       });
     }
@@ -135,7 +140,7 @@ function normalizeDevices(items: unknown[], warnings: string[]): ConfigDevice[] 
   return devices;
 }
 
-/** Members and exclusions may name a blind by integrationID or by name. */
+/** `include` (alias `members`) and `exclude` may name a blind by integrationID or by name. */
 function resolveGroupMembers(group: PendingGroup, devices: ConfigDevice[], warnings: string[]): string[] {
   const blinds = devices.filter(d => d.deviceType === 'blind');
   const findDevice = (ref: string) => devices.find(d => d.integrationID === ref || d.name === ref);

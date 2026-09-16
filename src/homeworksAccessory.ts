@@ -6,6 +6,20 @@ import { LightController, ShadeController, ShadeMotion, BlindController, BlindMo
 /** Momentary switches spring back to off after this long. */
 const MOMENTARY_RESET_MS = 1000;
 
+/**
+ * The Home app (iOS 16+) displays and edits service names through ConfiguredName and
+ * ignores Name. Initialise it only when empty so a rename made in the Home app survives
+ * restarts; the characteristic value is persisted in Homebridge's accessory cache.
+ */
+function ensureConfiguredName(host: AccessoryHost, service: Service, name: string): void {
+  const { ConfiguredName } = host.Characteristic;
+  service.addOptionalCharacteristic(ConfiguredName);
+  const characteristic = service.getCharacteristic(ConfiguredName);
+  if (!characteristic.value) {
+    characteristic.updateValue(name);
+  }
+}
+
 /** What an accessory needs from the platform. HomeworksPlatform satisfies this. */
 export interface AccessoryHost {
   readonly Service: typeof Service;
@@ -43,6 +57,9 @@ export abstract class HomeworksAccessory {
   /** Set by the platform; invoked when HomeKit wants the processor to change this load. */
   public onSendLevel?: SendLevelCallback;
 
+  /** The service whose ConfiguredName the Home app treats as this accessory's name, if any. */
+  private namedService: Service | null = null;
+
   constructor(
     protected readonly host: AccessoryHost,
     protected readonly accessory: PlatformAccessory,
@@ -59,8 +76,24 @@ export abstract class HomeworksAccessory {
     return this.config.integrationID;
   }
 
+  /** The name shown in HomeKit if the user renamed it there, otherwise the config name. */
   public getName(): string {
-    return this.config.name;
+    return this.getHomeKitRename() ?? this.config.name;
+  }
+
+  /** The name the user gave this accessory in the Home app, when it differs from the config. */
+  public getHomeKitRename(): string | null {
+    if (!this.namedService) {
+      return null;
+    }
+    const value = this.namedService.getCharacteristic(this.host.Characteristic.ConfiguredName).value;
+    return typeof value === 'string' && value !== '' && value !== this.config.name ? value : null;
+  }
+
+  /** Marks the primary service as the one carrying the accessory's HomeKit name. */
+  protected adoptConfiguredName(service: Service): void {
+    ensureConfiguredName(this.host, service, this.config.name);
+    this.namedService = service;
   }
 
   public getUUID(): string {
@@ -111,6 +144,7 @@ export class HomeworksLightAccessory extends HomeworksAccessory {
     this.pruneServices([Service.Lightbulb]);
     this.service = accessory.getService(Service.Lightbulb) || accessory.addService(Service.Lightbulb);
     this.service.setCharacteristic(Characteristic.Name, config.name);
+    this.adoptConfiguredName(this.service);
 
     this.controller = new LightController(config.isDimmable, {
       sendLevel: level => this.sendLevel(level),
@@ -162,6 +196,7 @@ export class HomeworksShadeAccessory extends HomeworksAccessory {
     this.pruneServices([Service.WindowCovering]);
     this.service = accessory.getService(Service.WindowCovering) || accessory.addService(Service.WindowCovering);
     this.service.setCharacteristic(Characteristic.Name, config.name);
+    this.adoptConfiguredName(this.service);
 
     this.controller = new ShadeController({
       sendLevel: level => this.sendLevel(level),
@@ -269,13 +304,7 @@ abstract class RaiseLowerStopAccessory extends HomeworksAccessory {
     const { Service, Characteristic } = this.host;
     const service = this.accessory.getServiceById(Service.Switch, subtype) || this.accessory.addService(Service.Switch, name, subtype);
     service.setCharacteristic(Characteristic.Name, name);
-    // The Home app labels services inside an accessory by ConfiguredName (iOS 16+), not Name.
-    // Set it only when empty so a rename made in the Home app survives restarts.
-    service.addOptionalCharacteristic(Characteristic.ConfiguredName);
-    const configuredName = service.getCharacteristic(Characteristic.ConfiguredName);
-    if (!configuredName.value) {
-      configuredName.updateValue(name);
-    }
+    ensureConfiguredName(this.host, service, name);
     return service;
   }
 

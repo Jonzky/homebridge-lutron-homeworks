@@ -285,3 +285,36 @@ describe('HomeworksBlindGroupAccessory', () => {
     expect(sent).toEqual([]);
   });
 });
+
+describe('HomeKit names flowing back to Homebridge', () => {
+  it('a light exposes ConfiguredName set to the config name when nothing was set before', () => {
+    const { service, hwa } = light(true);
+    expect(service.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Kitchen');
+    expect(hwa.getHomeKitRename()).toBeNull();
+  });
+
+  it('a light keeps a ConfiguredName set in the Home app and reports it as a rename', () => {
+    const cached = new Accessory('Kitchen', uuid.generate('01:01:00:01:04'));
+    const lightbulb = cached.addService(Service.Lightbulb);
+    lightbulb.addOptionalCharacteristic(Characteristic.ConfiguredName);
+    lightbulb.setCharacteristic(Characteristic.ConfiguredName, 'Cooker lights');
+    const { service, hwa } = light(true, cached);
+    expect(service.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Cooker lights');
+    expect(hwa.getHomeKitRename()).toBe('Cooker lights');
+  });
+
+  it('a shade exposes ConfiguredName and keeps a Home app rename', () => {
+    const cached = new Accessory('Blind', uuid.generate('01:01:00:02:01'));
+    const covering = cached.addService(Service.WindowCovering);
+    covering.addOptionalCharacteristic(Characteristic.ConfiguredName);
+    covering.setCharacteristic(Characteristic.ConfiguredName, 'Study shade');
+    const { service, hwa } = shade(cached);
+    expect(service.getCharacteristic(Characteristic.ConfiguredName).value).toBe('Study shade');
+    expect(hwa.getHomeKitRename()).toBe('Study shade');
+  });
+
+  it('a blind has no single HomeKit name to report', () => {
+    const { hwa } = blind();
+    expect(hwa.getHomeKitRename()).toBeNull();
+  });
+});
