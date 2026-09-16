@@ -93,9 +93,9 @@
                 "functionBody": "return model.devices[arrayIndices].deviceType === 'blind';"
               }
             },
-            "members": {
+            "include": {
               "type": "array",
-              "title": "Member blinds",
+              "title": "Included blinds",
               "description": "Blind groups only. Names or integration IDs of the blinds to control together. Leave empty to include every blind.",
               "items": { "type": "string" },
               "condition": {

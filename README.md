@@ -27,7 +27,8 @@ Add a platform block to `config.json`, or use the Homebridge UI. The `platform` 
     { "name": "Hall", "integrationID": "01:01:00:01:05", "deviceType": "light" },
     { "name": "Study shade", "integrationID": "01:01:00:02:01", "deviceType": "shade" },
     { "name": "Lounge blind", "integrationID": "01:01:00:03:01", "deviceType": "blind" },
-    { "name": "All blinds", "integrationID": "all-blinds", "deviceType": "blindGroup", "exclude": ["Broken blind"] }
+    { "name": "All blinds", "integrationID": "all-blinds", "deviceType": "blindGroup", "exclude": ["Broken blind"] },
+    { "name": "Front blinds", "integrationID": "front-blinds", "deviceType": "blindGroup", "include": ["Lounge blind", "01:01:00:03:02"] }
   ]
 }
 ```
@@ -43,7 +44,7 @@ Add a platform block to `config.json`, or use the Homebridge UI. The `platform` 
 | `devices[].deviceType` | `light` (default), `shade`, `blind` or `blindGroup`. |
 | `devices[].isDimmable` | Lights only. Omitted means not dimmable. |
 | `devices[].raiseLevel`, `lowerLevel`, `stopLevel` | Blinds only. Defaults 16, 35 and 0. |
-| `devices[].members` | Blind groups only. Names or integration IDs of the blinds in the group. Omit to include every blind. |
+| `devices[].include` | Blind groups only. Names or integration IDs of the blinds in the group. Omit to include every blind. `members` is accepted as an alias. |
 | `devices[].exclude` | Blind groups only. Names or integration IDs to leave out. |
 
 ### Device types
@@ -51,7 +52,11 @@ Add a platform block to `config.json`, or use the Homebridge UI. The `platform` 
 - **light**: a Lightbulb. Turning a dimmable light on restores its last level rather than jumping to 100%.
 - **shade**: a Window Covering whose position is the dimmer level. Position state follows the processor's confirmation.
 - **blind**: a blind whose motor is driven by relays, where the dimmer level is a command code rather than a position. HomeKit shows one accessory with three switches labelled Raise, Lower and Stop (use "Show as separate tiles" in the Home app's accessory settings if you prefer three tiles). Raise and Lower stay on while the processor reports the matching code and send the stop code when switched off; Stop is momentary. Renaming a switch in the Home app sticks. Because the processor keeps reporting the last code, the switches turn off on their own after a minute.
-- **blindGroup**: one accessory with the same Raise, Lower and Stop switches that drives several blinds. Membership is every blind in the config unless `members` lists specific ones; `exclude` removes blinds from either. Commands go out one blind at a time, a tenth of a second apart, using each blind's own codes. The group's Raise or Lower switch shows on only while every member reports that motion.
+- **blindGroup**: one accessory with the same Raise, Lower and Stop switches that drives several blinds. Membership is every blind in the config unless `include` lists specific ones; `exclude` removes blinds from either. Commands go out one blind at a time, a tenth of a second apart, using each blind's own codes. The group's Raise or Lower switch shows on only while every member reports that motion.
+
+### Names changed in the Home app
+
+HomeKit does not send accessory names back to a bridge, with one exception: the `ConfiguredName` characteristic, which the Home app (iOS 16 and later) writes when you rename a service. Every light, shade and blind switch exposes it. The plugin fills it with the config name only when it is empty and never overwrites it, so a rename made in the Home app survives restarts. At startup the plugin logs any accessory whose HomeKit name differs from the config and shows that name in the Homebridge UI. Renames made before this characteristic existed stay in the Home app only; renaming once more makes them flow back.
 
 Devices with a missing name or integration ID, or with a duplicate integration ID, are skipped with a warning in the Homebridge log. A missing host or an invalid port is logged as an error and the plugin stays inactive.
 
